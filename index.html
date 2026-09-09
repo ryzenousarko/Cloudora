@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+    <meta name="theme-color" content="#4f8cff">
+
+    <meta name="description"
+        content="Cloudora - Live weather, forecasts, air quality, world clocks and more.">
+
+    <link rel="manifest" href="manifest.json">
+
+    <link rel="icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E☁️%3C/text%3E%3C/svg%3E">
+
+    <title>Cloudora - Smart Weather</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Leaflet -->
+    <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin="" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Background -->
+    <div class="background-glow glow-one"></div>
+    <div class="background-glow glow-two"></div>
+
+    <!-- HEADER -->
+    <header class="topbar">
+
+        <div class="brand">
+            <div class="brand-icon">☁️</div>
+
+            <div>
+                <h1>Cloudora</h1>
+                <span>SMART WEATHER</span>
+            </div>
+        </div>
+
+        <div class="header-actions">
+
+            <button id="unitBtn" class="icon-btn" title="Change temperature unit">
+                °C
+            </button>
+
+            <button id="themeBtn" class="icon-btn" title="Change theme">
+                🌙
+            </button>
+
+            <button id="notifyBtn" class="icon-btn" title="Enable notifications">
+                🔔
+            </button>
+
+            <button id="installBtn" class="install-btn hidden">
+                📲 Install Cloudora
+            </button>
+
+            <button id="locationBtn" class="location-btn">
+                📍 My Location
+            </button>
+
+        </div>
+
+    </header>
+
+
+    <main class="container">
+
+        <!-- SEARCH -->
+        <section class="search-section">
+
+            <div class="search-box">
+
+                <span>🔎</span>
+
+                <input
+                    type="text"
+                    id="cityInput"
+                    placeholder="Search city..."
+                    autocomplete="off">
+
+                <button id="searchBtn">
+                    Search
+                </button>
+
+            </div>
+
+            <div id="searchResults" class="search-results"></div>
+
+        </section>
+
+
+        <!-- STATUS -->
+        <div id="loading" class="status hidden">
+            <div class="loader"></div>
+            <span>Loading weather...</span>
+        </div>
+
+        <div id="error" class="error hidden"></div>
+
+
+        <!-- WEATHER ALERT -->
+        <section id="weatherAlert" class="weather-alert hidden">
+
+            <div class="alert-icon">⚠️</div>
+
+            <div>
+                <strong id="alertTitle">Weather Alert</strong>
+                <p id="alertText"></p>
+            </div>
+
+        </section>
+
+
+        <!-- HERO -->
+        <section class="hero-card">
+
+            <div class="hero-left">
+
+                <div class="location-info">
+
+                    <h2 id="cityName">Kolkata</h2>
+
+                    <p id="countryName">India</p>
+
+                    <p id="dateText">Loading date...</p>
+
+                    <div class="timezone">
+                        🌍 <span id="timezoneText">Timezone</span>
+                    </div>
+
+                </div>
+
+                <button id="saveCityBtn" class="save-btn">
+                    ☆ Save City
+                </button>
+
+            </div>
+
+
+            <div class="main-weather">
+
+                <div id="weatherIcon" class="weather-icon">
+                    ☁️
+                </div>
+
+                <div>
+
+                    <div class="temperature">
+                        <span id="temperature">--</span>
+                        <sup>°</sup>
+                    </div>
+
+                    <div id="weatherDescription">
+                        Loading...
+                    </div>
+
+                    <p>
+                        Feels like
+                        <strong id="feelsLike">--°</strong>
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div class="clock-box">
+
+                <span>LOCAL TIME</span>
+
+                <strong id="localClock">
+                    --:--:--
+                </strong>
+
+                <small id="localDate">
+                    --
+                </small>
+
+            </div>
+
+        </section>
+
+
+        <!-- WEATHER DETAILS -->
+        <section class="section">
+
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">CURRENT CONDITIONS</span>
+                    <h2>Weather Details</h2>
+                </div>
+            </div>
+
+
+            <div class="details-grid">
+
+                <div class="detail-card">
+                    <span>💧</span>
+                    <div>
+                        <small>Humidity</small>
+                        <strong id="humidity">--%</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>💨</span>
+                    <div>
+                        <small>Wind</small>
+                        <strong id="wind">-- km/h</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>🎚️</span>
+                    <div>
+                        <small>Pressure</small>
+                        <strong id="pressure">-- hPa</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>☀️</span>
+                    <div>
+                        <small>UV Index</small>
+                        <strong id="uv">--</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>👁️</span>
+                    <div>
+                        <small>Visibility</small>
+                        <strong id="visibility">-- km</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>☁️</span>
+                    <div>
+                        <small>Cloud Cover</small>
+                        <strong id="cloudCover">--%</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>🌅</span>
+                    <div>
+                        <small>Sunrise</small>
+                        <strong id="sunrise">--</strong>
+                    </div>
+                </div>
+
+                <div class="detail-card">
+                    <span>🌇</span>
+                    <div>
+                        <small>Sunset</small>
+                        <strong id="sunset">--</strong>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- HOURLY -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">NEXT HOURS</span>
+                    <h2>Hourly Forecast</h2>
+                </div>
+
+            </div>
+
+            <div id="hourlyForecast" class="hourly-container"></div>
+
+        </section>
+
+
+        <!-- CHART -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">ANALYTICS</span>
+                    <h2>Weather Analytics</h2>
+                </div>
+
+                <select id="chartType">
+
+                    <option value="temperature">
+                        Temperature
+                    </option>
+
+                    <option value="rain">
+                        Rain Probability
+                    </option>
+
+                    <option value="humidity">
+                        Humidity
+                    </option>
+
+                    <option value="wind">
+                        Wind Speed
+                    </option>
+
+                </select>
+
+            </div>
+
+            <div class="chart-card">
+                <canvas id="weatherChart"></canvas>
+            </div>
+
+        </section>
+
+
+        <!-- 7 DAY -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">LONG RANGE</span>
+                    <h2>7-Day Forecast</h2>
+                </div>
+
+            </div>
+
+            <div id="dailyForecast" class="daily-grid"></div>
+
+        </section>
+
+
+        <!-- SMART INSIGHTS -->
+        <section class="section smart-insights-section">
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">SMART WEATHER</span>
+                    <h2>What should I do today?</h2>
+                </div>
+                <button id="shareWeatherBtn" class="secondary-btn">📤 Share Weather</button>
+            </div>
+            <div id="smartInsights" class="insights-grid"></div>
+            <div class="daily-briefing" id="dailyBriefing">Loading your personalized weather briefing...</div>
+        </section>
+
+
+        <!-- MAP -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">LOCATION</span>
+                    <h2>Weather Map</h2>
+                </div>
+
+            </div>
+
+            <div class="map-toolbar">
+                <div class="map-layers" role="group" aria-label="Weather map layers">
+                    <button class="map-layer-btn active" data-map-layer="standard">🗺️ Map</button>
+                    <button class="map-layer-btn" data-map-layer="satellite">🛰️ Satellite</button>
+                    <button class="map-layer-btn" data-map-layer="radar">🌧️ Radar</button>
+                    <button class="map-layer-btn" data-map-layer="temperature">🌡️ Temperature</button>
+                    <button class="map-layer-btn" data-map-layer="wind">💨 Wind</button>
+                </div>
+                <span id="radarStatus" class="map-status">Live layers available when supported</span>
+            </div>
+
+            <div id="weatherMap"></div>
+
+            <p class="map-note">
+                📌 Map shows your selected weather location.
+            </p>
+
+        </section>
+
+
+        <!-- AIR QUALITY -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">ENVIRONMENT</span>
+                    <h2>Air Quality</h2>
+                </div>
+
+            </div>
+
+
+            <div class="air-quality-grid">
+
+                <div class="aqi-main">
+
+                    <span>AQI</span>
+
+                    <strong id="aqiValue">
+                        --
+                    </strong>
+
+                    <p id="aqiText">
+                        Loading...
+                    </p>
+
+                </div>
+
+
+                <div class="aq-card">
+                    <span>PM2.5</span>
+                    <strong id="pm25">--</strong>
+                    <small>µg/m³</small>
+                </div>
+
+                <div class="aq-card">
+                    <span>PM10</span>
+                    <strong id="pm10">--</strong>
+                    <small>µg/m³</small>
+                </div>
+
+                <div class="aq-card">
+                    <span>NO₂</span>
+                    <strong id="no2">--</strong>
+                    <small>µg/m³</small>
+                </div>
+
+                <div class="aq-card">
+                    <span>O₃</span>
+                    <strong id="o3">--</strong>
+                    <small>µg/m³</small>
+                </div>
+
+                <div class="aq-card pollen-card">
+                    <span>🌾 Pollen</span>
+                    <strong id="pollenLevel">--</strong>
+                    <small id="pollenDetail">Loading...</small>
+                </div>
+
+                <div class="aq-card">
+                    <span>🌱 Grass</span>
+                    <strong id="grassPollen">--</strong>
+                    <small>pollen</small>
+                </div>
+
+                <div class="aq-card">
+                    <span>🌳 Birch</span>
+                    <strong id="birchPollen">--</strong>
+                    <small>pollen</small>
+                </div>
+
+                <div class="aq-card">
+                    <span>🌿 Ragweed</span>
+                    <strong id="ragweedPollen">--</strong>
+                    <small>pollen</small>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- SUN MOON -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">ASTRONOMY</span>
+                    <h2>Sun & Moon</h2>
+                </div>
+
+            </div>
+
+
+            <div class="sunmoon-grid">
+
+                <div class="astro-card">
+                    <div class="astro-icon">🌅</div>
+                    <span>Sunrise</span>
+                    <strong id="astroSunrise">--</strong>
+                </div>
+
+                <div class="astro-card">
+                    <div class="astro-icon">🌇</div>
+                    <span>Sunset</span>
+                    <strong id="astroSunset">--</strong>
+                </div>
+
+                <div class="astro-card">
+                    <div class="astro-icon">🌙</div>
+                    <span>Moon Phase</span>
+                    <strong id="moonPhase">--</strong>
+                </div>
+
+                <div class="astro-card">
+                    <div class="astro-icon">☀️</div>
+                    <span>Daylight</span>
+                    <strong id="daylight">--</strong>
+                </div>
+
+            </div>
+
+            <div class="moon-details" id="moonDetails"></div>
+
+        </section>
+
+
+        <!-- HISTORY -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">PAST WEATHER</span>
+                    <h2>Historical Weather</h2>
+                </div>
+
+            </div>
+
+
+            <div class="history-controls">
+
+                <input
+                    type="date"
+                    id="historyDate">
+
+                <button id="historyBtn">
+                    View Weather
+                </button>
+
+            </div>
+
+
+            <div id="historyResult" class="history-result hidden"></div>
+
+        </section>
+
+
+        <!-- CITY COMPARISON -->
+        <section class="section">
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">COMPARE</span>
+                    <h2>City Weather Comparison</h2>
+                </div>
+            </div>
+            <div class="compare-controls">
+                <input id="compareCity1" placeholder="City 1 (e.g. Kolkata)" value="Kolkata">
+                <input id="compareCity2" placeholder="City 2 (e.g. Mumbai)" value="Mumbai">
+                <input id="compareCity3" placeholder="City 3 (optional)" value="Delhi">
+                <button id="compareBtn">Compare</button>
+            </div>
+            <div id="compareResults" class="compare-grid"></div>
+        </section>
+
+
+        <!-- SAVED CITIES -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">PERSONAL</span>
+                    <h2>Saved Cities</h2>
+                </div>
+
+            </div>
+
+            <div id="savedCities" class="saved-grid"></div>
+
+        </section>
+
+
+        <!-- WORLD CLOCK -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">GLOBAL TIME</span>
+                    <h2>World Clocks</h2>
+                </div>
+
+            </div>
+
+
+            <div class="world-grid">
+
+                <div class="world-card">
+                    <span>🇮🇳 Kolkata</span>
+                    <strong id="clockKolkata">--:--</strong>
+                    <small>IST</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇬🇧 London</span>
+                    <strong id="clockLondon">--:--</strong>
+                    <small>GMT/BST</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇺🇸 New York</span>
+                    <strong id="clockNewYork">--:--</strong>
+                    <small>ET</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇯🇵 Tokyo</span>
+                    <strong id="clockTokyo">--:--</strong>
+                    <small>JST</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇦🇪 Dubai</span>
+                    <strong id="clockDubai">--:--</strong>
+                    <small>GST</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇸🇬 Singapore</span>
+                    <strong id="clockSingapore">--:--</strong>
+                    <small>SGT</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇦🇺 Sydney</span>
+                    <strong id="clockSydney">--:--</strong>
+                    <small>AEST/AEDT</small>
+                </div>
+
+                <div class="world-card">
+                    <span>🇨🇦 Toronto</span>
+                    <strong id="clockToronto">--:--</strong>
+                    <small>ET</small>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- CLOUDORA SETTINGS -->
+        <section class="section">
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">PERSONALIZE</span>
+                    <h2>Cloudora Controls</h2>
+                </div>
+            </div>
+            <div class="settings-grid">
+                <div class="setting-card">
+                    <span>🕐 Time format</span>
+                    <select id="timeFormatSelect">
+                        <option value="24">24-hour</option>
+                        <option value="12">12-hour</option>
+                    </select>
+                </div>
+                <div class="setting-card">
+                    <span>🎨 Weather scene</span>
+                    <select id="sceneSelect">
+                        <option value="auto">Automatic</option>
+                        <option value="minimal">Minimal</option>
+                        <option value="dynamic">Dynamic</option>
+                    </select>
+                </div>
+                <div class="setting-card">
+                    <span>🔔 Alerts</span>
+                    <button id="alertSettingsBtn">Configure alerts</button>
+                </div>
+                <div class="setting-card">
+                    <span>🎙️ Voice assistant</span>
+                    <button id="voiceBtn">Start listening</button>
+                </div>
+            </div>
+            <div id="alertSettings" class="alert-settings hidden">
+                <label><input type="checkbox" id="rainAlerts" checked> Rain alerts</label>
+                <label><input type="checkbox" id="heatAlerts" checked> Heat alerts</label>
+                <label><input type="checkbox" id="aqAlerts" checked> Air-quality alerts</label>
+                <button id="enableNotificationsBtn">Enable browser notifications</button>
+            </div>
+        </section>
+
+
+        <!-- AI ASSISTANT -->
+        <section class="section">
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">CLOUDORA AI</span>
+                    <h2>Weather Assistant</h2>
+                </div>
+
+            </div>
+
+
+            <div class="ai-card">
+
+                <div id="chatMessages" class="chat-messages">
+
+                    <div class="bot-message">
+                        👋 Hi! I'm Cloudora AI. Ask me about today's weather.
+                    </div>
+
+                </div>
+
+
+                <div class="quick-actions">
+
+                    <button data-question="Should I carry an umbrella?">
+                        ☔ Umbrella?
+                    </button>
+
+                    <button data-question="Is it hot today?">
+                        🌡️ Is it hot?
+                    </button>
+
+                    <button data-question="Is it good for outdoor activities?">
+                        🏃 Outdoors?
+                    </button>
+
+                    <button data-question="How is the air quality?">
+                        🌫️ Air quality?
+                    </button>
+
+                </div>
+
+
+                <div class="chat-input">
+
+                    <input
+                        type="text"
+                        id="chatInput"
+                        placeholder="Ask Cloudora AI...">
+
+                    <button id="chatBtn">
+                        Send
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- FOOTER -->
+    <footer>
+
+        <div class="footer-brand">
+            ☁️ <strong>Cloudora</strong>
+        </div>
+
+        <p>
+            Smart weather for everyone.
+        </p>
+
+        <small>
+            Weather data powered by Open-Meteo.
+        </small>
+
+    </footer>
+
+
+    <script src="script.js"></script>
+
+</body>
+</html>
