@@ -995,3 +995,94 @@ select:focus-visible {
     transition-duration: .01ms !important;
   }
 }
+/* =========================================================
+   CLOUDORA — HERO TEXT CONTRAST FIX
+   Fixes white text on the new light hero background
+   ========================================================= */
+
+.hero-card {
+    color: #172033;
+}
+
+.hero-card .location-info h2 {
+    color: #172033;
+}
+
+.hero-card .location-info p {
+    color: #52627a;
+    opacity: 1;
+}
+
+.hero-card .timezone {
+    color: #29415f;
+    background: rgba(79, 140, 255, 0.10);
+    border-color: rgba(79, 140, 255, 0.18);
+}
+
+.hero-card .save-btn {
+    color: #172033;
+    background: rgba(255, 255, 255, 0.60);
+    border-color: rgba(79, 140, 255, 0.25);
+}
+
+.hero-card .temperature {
+    color: #172033;
+}
+
+.hero-card #weatherDescription {
+    color: #172033;
+}
+
+.hero-card .main-weather p {
+    color: #52627a;
+    opacity: 1;
+}
+
+.hero-card .clock-box {
+    color: #172033;
+    background: rgba(255, 255, 255, 0.48);
+    border-color: rgba(255, 255, 255, 0.72);
+}
+
+.hero-card .clock-box span {
+    color: #607089;
+    opacity: 1;
+}
+
+.hero-card .clock-box strong {
+    color: #172033;
+}
+
+.hero-card .clock-box small {
+    color: #607089;
+    opacity: 1;
+}
+
+/* Dark mode */
+body.dark .hero-card {
+    color: #f5f8ff;
+}
+
+body.dark .hero-card .location-info h2,
+body.dark .hero-card .temperature,
+body.dark .hero-card #weatherDescription,
+body.dark .hero-card .clock-box strong,
+body.dark .hero-card .save-btn {
+    color: #f5f8ff;
+}
+
+body.dark .hero-card .location-info p,
+body.dark .hero-card .main-weather p,
+body.dark .hero-card .clock-box span,
+body.dark .hero-card .clock-box small {
+    color: #c4d0e2;
+}
+
+body.dark .hero-card .timezone {
+    color: #dbe8ff;
+}
+
+body.dark .hero-card .save-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.14);
+}
