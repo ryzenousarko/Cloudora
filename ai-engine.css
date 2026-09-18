@@ -1,0 +1,269 @@
+
+/* ============================================================
+   CLOUDORA AI 2.0 — PREMIUM ASSISTANT UI
+   ============================================================ */
+
+.ai-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.ai-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 150px;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 12% 20%, rgba(79,140,255,.18), transparent 32%),
+        radial-gradient(circle at 90% 0%, rgba(124,92,255,.14), transparent 34%);
+}
+
+.ai-intelligence-bar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--ui-border, rgba(255,255,255,.35));
+    background: rgba(255,255,255,.20);
+    backdrop-filter: blur(12px);
+}
+
+body.dark .ai-intelligence-bar {
+    background: rgba(255,255,255,.035);
+}
+
+.ai-status {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+}
+
+.ai-status strong {
+    display: block;
+    font-size: 14px;
+    letter-spacing: -.02em;
+}
+
+.ai-status small {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.ai-live-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #35c77a;
+    box-shadow: 0 0 0 5px rgba(53,199,122,.10), 0 0 16px rgba(53,199,122,.45);
+}
+
+.ai-tools {
+    display: flex;
+    gap: 6px;
+}
+
+.ai-tool-btn {
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--ui-border, rgba(255,255,255,.35));
+    border-radius: 9px;
+    background: rgba(255,255,255,.30);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+body.dark .ai-tool-btn {
+    background: rgba(255,255,255,.045);
+}
+
+.ai-tool-btn:hover {
+    background: rgba(79,140,255,.11);
+}
+
+.chat-messages {
+    position: relative;
+    z-index: 1;
+    min-height: 330px;
+    max-height: 520px;
+    padding: 20px;
+    scroll-behavior: smooth;
+}
+
+.bot-message,
+.user-message {
+    position: relative;
+    border-radius: 17px;
+}
+
+.bot-message {
+    max-width: min(86%, 760px);
+    padding: 13px 15px 10px;
+    line-height: 1.62;
+    background: rgba(255,255,255,.68);
+}
+
+body.dark .bot-message {
+    background: rgba(255,255,255,.055);
+}
+
+.user-message {
+    max-width: min(78%, 620px);
+    padding: 12px 15px;
+}
+
+.ai-message-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 9px;
+    opacity: .68;
+}
+
+.ai-message-actions button {
+    border: 0;
+    padding: 4px 7px;
+    border-radius: 7px;
+    background: rgba(100,120,150,.09);
+    color: var(--muted);
+    font-size: 9px;
+    cursor: pointer;
+}
+
+.ai-message-actions button:hover {
+    background: rgba(79,140,255,.12);
+    color: var(--text);
+}
+
+.ai-source {
+    display: block;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 9px;
+    opacity: .72;
+}
+
+.ai-input-hint {
+    padding: 0 14px 8px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+.quick-actions {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 0 18px 15px;
+}
+
+.quick-actions button {
+    min-height: 34px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid var(--ui-border, rgba(255,255,255,.35));
+    background: rgba(255,255,255,.40);
+    color: var(--text);
+    font-size: 10px;
+    font-weight: 750;
+    cursor: pointer;
+    transition: transform .18s ease, background .18s ease;
+}
+
+body.dark .quick-actions button {
+    background: rgba(255,255,255,.045);
+}
+
+.quick-actions button:hover {
+    transform: translateY(-1px);
+    background: rgba(79,140,255,.11);
+}
+
+.chat-input {
+    position: relative;
+    z-index: 1;
+}
+
+#chatInput {
+    min-height: 48px;
+    border-radius: 14px;
+}
+
+#chatBtn {
+    min-width: 82px;
+}
+
+#chatBtn:disabled {
+    cursor: wait;
+    opacity: .68;
+}
+
+.cloudora-ai-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    z-index: 9999;
+    transform: translate(-50%, 18px);
+    opacity: 0;
+    pointer-events: none;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(20,30,48,.92);
+    color: white;
+    box-shadow: 0 12px 35px rgba(0,0,0,.22);
+    font-size: 12px;
+    transition: opacity .2s ease, transform .2s ease;
+}
+
+.cloudora-ai-toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+@media (max-width: 700px) {
+    .ai-intelligence-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ai-tools {
+        width: 100%;
+    }
+
+    .ai-tool-btn {
+        flex: 1;
+    }
+
+    .chat-messages {
+        min-height: 300px;
+        max-height: 460px;
+        padding: 14px;
+    }
+
+    .bot-message,
+    .user-message {
+        max-width: 92%;
+    }
+
+    .quick-actions {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+    }
+
+    .quick-actions::-webkit-scrollbar {
+        display: none;
+    }
+
+    .quick-actions button {
+        flex: 0 0 auto;
+    }
+}
