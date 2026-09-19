@@ -1,0 +1,152 @@
+/* ============================================================
+   CLOUDORA AI 3.0 — SMART CONTEXT UI
+   ============================================================ */
+
+.ai3-context-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+    padding: 10px 13px;
+    border: 1px solid rgba(120, 150, 190, 0.18);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.035);
+    backdrop-filter: blur(10px);
+}
+
+.ai3-status-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.ai3-status-left strong {
+    display: block;
+    font-size: 0.82rem;
+    line-height: 1.2;
+}
+
+.ai3-status-left small {
+    display: block;
+    margin-top: 2px;
+    opacity: 0.62;
+    font-size: 0.7rem;
+    line-height: 1.3;
+}
+
+.ai3-dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: 50%;
+    background: #55d98a;
+    box-shadow: 0 0 0 4px rgba(85, 217, 138, 0.10);
+    animation: ai3Pulse 2s infinite;
+}
+
+#ai3ClearContext {
+    border: 0;
+    padding: 7px 10px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.07);
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.72rem;
+    transition: transform 0.18s ease, background 0.18s ease;
+}
+
+#ai3ClearContext:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+}
+
+.ai3-suggestions {
+    margin-top: 12px;
+}
+
+.ai3-suggestions-title {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 0.72rem;
+    opacity: 0.58;
+}
+
+.ai3-suggestion-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.ai3-suggestion-list button {
+    border: 1px solid rgba(120, 150, 190, 0.18);
+    border-radius: 999px;
+    padding: 8px 11px;
+    background: rgba(255, 255, 255, 0.045);
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.74rem;
+    transition:
+        transform 0.18s ease,
+        background 0.18s ease,
+        border-color 0.18s ease;
+}
+
+.ai3-suggestion-list button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(120, 150, 190, 0.32);
+}
+
+.ai3-message-actions {
+    display: flex;
+    margin-top: 8px;
+    gap: 6px;
+}
+
+.ai3-message-actions button {
+    border: 0;
+    border-radius: 7px;
+    padding: 5px 8px;
+    background: rgba(255, 255, 255, 0.055);
+    color: inherit;
+    opacity: 0.58;
+    cursor: pointer;
+    font-size: 0.68rem;
+}
+
+.ai3-message-actions button:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes ai3Pulse {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.55;
+        transform: scale(0.82);
+    }
+}
+
+@media (max-width: 600px) {
+    .ai3-context-bar {
+        align-items: flex-start;
+    }
+
+    .ai3-suggestion-list {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 3px;
+    }
+
+    .ai3-suggestion-list button {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+}
