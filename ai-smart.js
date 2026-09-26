@@ -1,7 +1,16 @@
 /* ============================================================
    CLOUDORA AI 3.0 — SMART CONTEXT LAYER
-   Works on top of Cloudora AI 2.0.
-   Does not replace ai-engine.js.
+   ------------------------------------------------------------
+   Provides:
+   - Conversation memory
+   - Context tracking
+   - Follow-up detection helpers
+   - Smart suggestions
+   - Context UI
+
+   IMPORTANT:
+   AI 3.0 DOES NOT ANSWER CHAT MESSAGES.
+   Cloudora AI 4.1 is the single answer authority.
    ============================================================ */
 
 (() => {
@@ -11,7 +20,6 @@
     const MAX_HISTORY = 8;
 
     let history = [];
-    let intercepting = false;
 
     const $ = id => document.getElementById(id);
 
@@ -20,17 +28,94 @@
     --------------------------------------------------------- */
 
     function init() {
-        if (!$("chatMessages") || !$("chatInput") || !$("chatBtn")) {
+        if (
+            !$("chatMessages") ||
+            !$("chatInput") ||
+            !$("chatBtn")
+        ) {
             setTimeout(init, 500);
             return;
         }
 
         loadContext();
+
+        /*
+         * IMPORTANT:
+         * Do NOT install AI 3.0 answer interception.
+         *
+         * ai-engine.js owns the chat.
+         * Cloudora AI 4.1 generates the answer.
+         */
+
+        installEnterBridge();
+
         addSmartChrome();
-        attachInterceptors();
         updateContextLabel();
 
-        console.log("Cloudora AI 3.0 — Smart Context loaded.");
+        console.log(
+            "Cloudora AI 3.0 — Smart Context loaded."
+        );
+    }
+
+    /* ---------------------------------------------------------
+       ENTER KEY BRIDGE
+       ---------------------------------------------------------
+       Pressing Enter performs exactly the same action as
+       clicking the Send button.
+
+       This does NOT generate an answer itself.
+       It simply forwards the action to ai-engine.js.
+    --------------------------------------------------------- */
+
+    function installEnterBridge() {
+        const input = $("chatInput");
+        const button = $("chatBtn");
+
+        if (!input || !button) {
+            setTimeout(
+                installEnterBridge,
+                500
+            );
+
+            return;
+        }
+
+        if (
+            input.dataset
+                .cloudoraEnterBridge ===
+            "true"
+        ) {
+            return;
+        }
+
+        input.dataset
+            .cloudoraEnterBridge =
+            "true";
+
+        input.addEventListener(
+            "keydown",
+            event => {
+                if (
+                    event.key !== "Enter" ||
+                    event.shiftKey
+                ) {
+                    return;
+                }
+
+                /*
+                 * Let normal Enter submit the chat.
+                 * Shift + Enter remains available for
+                 * multiline input.
+                 */
+                event.preventDefault();
+
+                button.click();
+            }
+        );
+
+        console.log(
+            "Cloudora chat Enter key enabled."
+        );
     }
 
     /* ---------------------------------------------------------
@@ -40,7 +125,9 @@
     function loadContext() {
         try {
             history = JSON.parse(
-                localStorage.getItem(STORAGE_KEY) || "[]"
+                localStorage.getItem(
+                    STORAGE_KEY
+                ) || "[]"
             );
 
             if (!Array.isArray(history)) {
@@ -55,26 +142,51 @@
         try {
             localStorage.setItem(
                 STORAGE_KEY,
-                JSON.stringify(history.slice(-MAX_HISTORY))
+                JSON.stringify(
+                    history.slice(
+                        -MAX_HISTORY
+                    )
+                )
             );
         } catch {
             // Storage may be unavailable.
         }
     }
 
-    function remember(question, answer, meta = {}) {
+    function remember(
+        question,
+        answer,
+        meta = {}
+    ) {
         history.push({
             question,
-            answer: stripHTML(answer),
-            timestamp: Date.now(),
-            intent: meta.intent || detectIntent(question),
-            topic: meta.topic || detectTopic(question),
+            answer:
+                stripHTML(
+                    answer
+                ),
+            timestamp:
+                Date.now(),
+            intent:
+                meta.intent ||
+                detectIntent(
+                    question
+                ),
+            topic:
+                meta.topic ||
+                detectTopic(
+                    question
+                ),
             timeReference:
                 meta.timeReference ||
-                detectTimeReference(question)
+                detectTimeReference(
+                    question
+                )
         });
 
-        history = history.slice(-MAX_HISTORY);
+        history =
+            history.slice(
+                -MAX_HISTORY
+            );
 
         saveContext();
         updateContextLabel();
@@ -85,45 +197,70 @@
     --------------------------------------------------------- */
 
     function detectTimeReference(q) {
-        const text = normalize(q);
+        const text =
+            normalize(q);
 
-        if (/\bday after tomorrow\b/.test(text)) {
+        if (
+            /\bday after tomorrow\b/.test(
+                text
+            )
+        ) {
             return "day-after-tomorrow";
         }
 
-        if (/\btomorrow\b/.test(text)) {
+        if (
+            /\btomorrow\b/.test(
+                text
+            )
+        ) {
             return "tomorrow";
         }
 
-        if (/\btonight\b/.test(text)) {
+        if (
+            /\btonight\b/.test(
+                text
+            )
+        ) {
             return "tonight";
         }
 
         if (
-            /\btoday\b|\bright now\b|\bcurrently\b/.test(text)
+            /\btoday\b|\bright now\b|\bcurrently\b/.test(
+                text
+            )
         ) {
             return "today";
         }
 
         if (
-            /\bthis weekend\b|\bweekend\b/.test(text)
+            /\bthis weekend\b|\bweekend\b/.test(
+                text
+            )
         ) {
             return "weekend";
         }
 
         if (
-            /\bthis evening\b|\bevening\b/.test(text)
+            /\bthis evening\b|\bevening\b/.test(
+                text
+            )
         ) {
             return "evening";
         }
 
         if (
-            /\bthis morning\b|\bmorning\b/.test(text)
+            /\bthis morning\b|\bmorning\b/.test(
+                text
+            )
         ) {
             return "morning";
         }
 
-        if (/\bafternoon\b/.test(text)) {
+        if (
+            /\bafternoon\b/.test(
+                text
+            )
+        ) {
             return "afternoon";
         }
 
@@ -131,67 +268,102 @@
     }
 
     function detectTopic(q) {
-        const text = normalize(q);
+        const text =
+            normalize(q);
 
         if (
-            /rain|rainy|raining|precipitation|umbrella/.test(text)
+            /rain|rainy|raining|precipitation|umbrella/.test(
+                text
+            )
         ) {
             return "rain";
         }
 
         if (
-            /temperature|temp|hot|cold|warm|cool|heat/.test(text)
+            /temperature|temp|hot|cold|warm|cool|heat/.test(
+                text
+            )
         ) {
             return "temperature";
         }
 
-        if (/wind|windy|gust/.test(text)) {
+        if (
+            /wind|windy|gust/.test(
+                text
+            )
+        ) {
             return "wind";
         }
 
-        if (/humidity|humid|sticky/.test(text)) {
+        if (
+            /humidity|humid|sticky/.test(
+                text
+            )
+        ) {
             return "humidity";
         }
 
         if (
-            /air quality|aqi|pollution|pm2/.test(text)
+            /air quality|aqi|pollution|pm2/.test(
+                text
+            )
         ) {
             return "air";
         }
 
         if (
-            /uv|sunburn|sunscreen|sun protection/.test(text)
+            /uv|sunburn|sunscreen|sun protection/.test(
+                text
+            )
         ) {
             return "uv";
         }
 
         if (
-            /wear|clothes|outfit|jacket|shirt|clothing/.test(text)
+            /wear|clothes|outfit|jacket|shirt|clothing/.test(
+                text
+            )
         ) {
             return "clothing";
         }
 
         if (
-            /outside|outdoor|walk|run|running|cycling|bike|hike|picnic|exercise/.test(text)
+            /outside|outdoor|walk|run|running|cycling|bike|hike|picnic|exercise/.test(
+                text
+            )
         ) {
             return "outdoor";
         }
 
         if (
-            /travel|trip|drive|driving|commute/.test(text)
+            /travel|trip|drive|driving|commute/.test(
+                text
+            )
         ) {
             return "travel";
         }
 
-        if (/sunrise|dawn/.test(text)) {
+        if (
+            /sunrise|dawn/.test(
+                text
+            )
+        ) {
             return "sunrise";
         }
 
-        if (/sunset|dusk/.test(text)) {
+        if (
+            /sunset|dusk/.test(
+                text
+            )
+        ) {
             return "sunset";
         }
 
-        if (/weather|forecast|conditions/.test(text)) {
+        if (
+            /weather|forecast|conditions/.test(
+                text
+            )
+        ) {
             return "weather";
         }
 
@@ -199,57 +371,94 @@
     }
 
     function detectIntent(q) {
-        const text = normalize(q);
+        const text =
+            normalize(q);
 
-        if (/umbrella/.test(text)) {
+        if (
+            /umbrella/.test(
+                text
+            )
+        ) {
             return "umbrella";
         }
 
-        if (/rain|raining|precipitation/.test(text)) {
+        if (
+            /rain|raining|precipitation/.test(
+                text
+            )
+        ) {
             return "rain";
         }
 
         if (
-            /temperature|temp|hot|cold|warm|cool|heat/.test(text)
+            /temperature|temp|hot|cold|warm|cool|heat/.test(
+                text
+            )
         ) {
             return "temperature";
         }
 
         if (
-            /air quality|aqi|pollution|pm2/.test(text)
+            /air quality|aqi|pollution|pm2/.test(
+                text
+            )
         ) {
             return "air";
         }
 
         if (
-            /outdoor|outside|walk|run|cycling|bike|hike|exercise/.test(text)
+            /outdoor|outside|walk|run|cycling|bike|hike|exercise/.test(
+                text
+            )
         ) {
             return "outdoor";
         }
 
         if (
-            /wear|clothes|outfit|jacket|shirt|clothing/.test(text)
+            /wear|clothes|outfit|jacket|shirt|clothing/.test(
+                text
+            )
         ) {
             return "clothing";
         }
 
-        if (/wind|windy|gust/.test(text)) {
+        if (
+            /wind|windy|gust/.test(
+                text
+            )
+        ) {
             return "wind";
         }
 
-        if (/humidity|humid|sticky/.test(text)) {
+        if (
+            /humidity|humid|sticky/.test(
+                text
+            )
+        ) {
             return "humidity";
         }
 
-        if (/uv|sunburn|sunscreen/.test(text)) {
+        if (
+            /uv|sunburn|sunscreen/.test(
+                text
+            )
+        ) {
             return "uv";
         }
 
-        if (/sunrise|dawn/.test(text)) {
+        if (
+            /sunrise|dawn/.test(
+                text
+            )
+        ) {
             return "sunrise";
         }
 
-        if (/sunset|dusk/.test(text)) {
+        if (
+            /sunset|dusk/.test(
+                text
+            )
+        ) {
             return "sunset";
         }
 
@@ -258,32 +467,51 @@
 
     function getLastContext() {
         return history.length
-            ? history[history.length - 1]
+            ? history[
+                history.length - 1
+            ]
             : null;
     }
 
     /* ---------------------------------------------------------
        SMART FOLLOW-UP DETECTION
+       ---------------------------------------------------------
+       These functions are retained for context analysis.
+
+       They DO NOT intercept chat submission.
+       AI 4.1 receives the actual question.
     --------------------------------------------------------- */
 
     function isFollowUp(question) {
-        const text = normalize(question);
+        const text =
+            normalize(question);
 
         if (!history.length) {
             return false;
         }
 
         return (
-            /^(what about|how about|and what about|and|then what|what if)\b/.test(text) ||
-            /^(morning|evening|afternoon|tonight|tomorrow|later)\b/.test(text) ||
-            /^(why|when|where|how much|how long)\b/.test(text) ||
-            /^(is it|will it|should i|can i)\b/.test(text) ||
-            /^(there|that|this|it)\b/.test(text)
+            /^(what about|how about|and what about|and|then what|what if)\b/.test(
+                text
+            ) ||
+            /^(morning|evening|afternoon|tonight|tomorrow|later)\b/.test(
+                text
+            ) ||
+            /^(why|when|where|how much|how long)\b/.test(
+                text
+            ) ||
+            /^(is it|will it|should i|can i)\b/.test(
+                text
+            ) ||
+            /^(there|that|this|it)\b/.test(
+                text
+            )
         );
     }
 
     function contextualize(question) {
-        const last = getLastContext();
+        const last =
+            getLastContext();
 
         if (!last) {
             return {
@@ -292,79 +520,108 @@
             };
         }
 
-        const text = normalize(question);
-        const lastTime = last.timeReference;
-        const lastTopic = last.topic;
+        const text =
+            normalize(question);
+
+        const lastTime =
+            last.timeReference;
+
+        const lastTopic =
+            last.topic;
 
         if (
-            /\bwhat about tomorrow\b|\band tomorrow\b|\bhow about tomorrow\b/.test(text)
+            /\bwhat about tomorrow\b|\band tomorrow\b|\bhow about tomorrow\b/.test(
+                text
+            )
         ) {
             return {
                 handled: true,
                 type: "standard",
-                question: buildExplicitQuestion(
-                    lastTopic,
-                    "tomorrow"
-                )
+                question:
+                    buildExplicitQuestion(
+                        lastTopic,
+                        "tomorrow"
+                    )
             };
         }
 
         if (
-            /\bwhat about evening\b|\bhow about evening\b|\bevening\b/.test(text)
+            /\bwhat about evening\b|\bhow about evening\b|\bevening\b/.test(
+                text
+            )
         ) {
             return {
                 handled: true,
                 type: "time",
                 time: "evening",
-                previousTime: lastTime,
-                topic: lastTopic
+                previousTime:
+                    lastTime,
+                topic:
+                    lastTopic
             };
         }
 
         if (
-            /\bwhat about morning\b|\bhow about morning\b|\bmorning\b/.test(text)
+            /\bwhat about morning\b|\bhow about morning\b|\bmorning\b/.test(
+                text
+            )
         ) {
             return {
                 handled: true,
                 type: "time",
                 time: "morning",
-                previousTime: lastTime,
-                topic: lastTopic
+                previousTime:
+                    lastTime,
+                topic:
+                    lastTopic
             };
         }
 
         if (
-            /\bwhat about afternoon\b|\bhow about afternoon\b/.test(text)
+            /\bwhat about afternoon\b|\bhow about afternoon\b/.test(
+                text
+            )
         ) {
             return {
                 handled: true,
                 type: "time",
                 time: "afternoon",
-                previousTime: lastTime,
-                topic: lastTopic
+                previousTime:
+                    lastTime,
+                topic:
+                    lastTopic
             };
         }
 
         if (
-            /\bwhat about tonight\b|\bhow about tonight\b/.test(text)
+            /\bwhat about tonight\b|\bhow about tonight\b/.test(
+                text
+            )
         ) {
             return {
                 handled: true,
                 type: "time",
                 time: "tonight",
-                previousTime: lastTime,
-                topic: lastTopic
+                previousTime:
+                    lastTime,
+                topic:
+                    lastTopic
             };
         }
 
         if (
-            /^(is it good|is it okay|is it fine|should i|can i|will it be okay)/.test(text)
+            /^(is it good|is it okay|is it fine|should i|can i|will it be okay)/.test(
+                text
+            )
         ) {
             return {
                 handled: true,
                 type: "topic",
-                topic: lastTopic,
-                time: lastTime || "today"
+                topic:
+                    lastTopic,
+                time:
+                    lastTime ||
+                    "today"
             };
         }
 
@@ -374,126 +631,37 @@
         };
     }
 
-    function buildExplicitQuestion(topic, time) {
+    function buildExplicitQuestion(
+        topic,
+        time
+    ) {
         const subject = {
             rain: "rain",
-            temperature: "temperature",
+            temperature:
+                "temperature",
             wind: "wind",
-            humidity: "humidity",
+            humidity:
+                "humidity",
             air: "air quality",
             uv: "UV",
-            clothing: "what should I wear",
-            outdoor: "outdoor conditions",
-            travel: "travel conditions",
-            weather: "weather"
+            clothing:
+                "what should I wear",
+            outdoor:
+                "outdoor conditions",
+            travel:
+                "travel conditions",
+            weather:
+                "weather"
         }[topic] || "weather";
 
-        if (subject === "what should I wear") {
+        if (
+            subject ===
+            "what should I wear"
+        ) {
             return `What should I wear ${time}?`;
         }
 
         return `What is the ${subject} ${time}?`;
-    }
-
-    /* ---------------------------------------------------------
-       SMART TIME RESPONSES
-    --------------------------------------------------------- */
-
-    function handleTimeQuestion(info) {
-        const context = getWeatherContext();
-
-        if (!context) {
-            return {
-                text:
-                    "I'm still waiting for the latest weather data to load.",
-                topic: info.topic
-            };
-        }
-
-        const hours = context.hours;
-
-        if (!hours.length) {
-            return {
-                text:
-                    "I don't have enough hourly forecast data to compare that time period yet.",
-                topic: info.topic
-            };
-        }
-
-        let candidates = hours.filter(h => {
-            const hour = getHour(h.time);
-
-            if (info.time === "morning") {
-                return hour >= 6 && hour < 12;
-            }
-
-            if (info.time === "afternoon") {
-                return hour >= 12 && hour < 17;
-            }
-
-            if (info.time === "evening") {
-                return hour >= 17 && hour < 22;
-            }
-
-            if (info.time === "tonight") {
-                return hour >= 20 || hour < 6;
-            }
-
-            return true;
-        });
-
-        if (!candidates.length) {
-            candidates = hours;
-        }
-
-        const best = findBestHour(candidates);
-
-        if (!best) {
-            return {
-                text: "I couldn't find a useful hourly forecast window.",
-                topic: info.topic
-            };
-        }
-
-        const wettest = [...candidates].sort(
-            (a, b) => (b.rain || 0) - (a.rain || 0)
-        )[0];
-
-        const timeLabel = capitalize(info.time);
-
-        let text =
-            `For **${timeLabel.toLowerCase()}**, the forecast is around ` +
-            `**${round(best.temp)}${context.unit}**, ` +
-            `with a **${round(best.rain)}%** rain chance and ` +
-            `wind around **${round(best.wind)} km/h**. `;
-
-        if (wettest && wettest.rain >= 50) {
-            text +=
-                `The wetter point in this period is around **${clock(wettest.time)}**. `;
-        }
-
-        if (info.topic === "rain") {
-            text +=
-                best.rain >= 50
-                    ? "Rain is something I'd plan around during this period."
-                    : "There isn't a strong rain signal during this period.";
-        } else if (info.topic === "temperature") {
-            text += comfortSentence(
-                best.feels || best.temp
-            );
-        } else if (info.topic === "outdoor") {
-            text += outdoorSentence(best);
-        } else if (info.topic === "clothing") {
-            text += clothingSentence(best, context);
-        } else {
-            text += outdoorSentence(best);
-        }
-
-        return {
-            text,
-            topic: info.topic,
-            time: info.time
-        };
     }
 
     /* ---------------------------------------------------------
@@ -502,23 +670,29 @@
 
     function getWeatherContext() {
         if (
-            typeof weatherData === "undefined" ||
+            typeof weatherData ===
+                "undefined" ||
             !weatherData ||
             !weatherData.current
         ) {
             return null;
         }
 
-        const hourly = weatherData.hourly || {};
+        const hourly =
+            weatherData.hourly ||
+            {};
 
         const index =
-            typeof getCurrentHourlyIndex === "function"
+            typeof getCurrentHourlyIndex ===
+            "function"
                 ? getCurrentHourlyIndex()
                 : 0;
 
         const unit =
-            typeof temperatureUnit !== "undefined" &&
-            temperatureUnit === "fahrenheit"
+            typeof temperatureUnit !==
+                "undefined" &&
+            temperatureUnit ===
+                "fahrenheit"
                 ? "°F"
                 : "°C";
 
@@ -529,44 +703,83 @@
             i <
             Math.min(
                 index + 24,
-                hourly.time?.length || 0
+                hourly.time?.length ||
+                    0
             );
             i++
         ) {
             hours.push({
-                time: hourly.time?.[i],
-                temp: num(
-                    hourly.temperature_2m?.[i]
-                ),
-                feels: num(
-                    hourly.apparent_temperature?.[i]
-                ),
-                rain: num(
-                    hourly.precipitation_probability?.[i]
-                ),
-                precipitation: num(
-                    hourly.precipitation?.[i]
-                ),
-                wind: num(
-                    hourly.wind_speed_10m?.[i]
-                ),
-                uv: num(
-                    hourly.uv_index?.[i]
-                ),
-                humidity: num(
-                    hourly.relative_humidity_2m?.[i]
-                ),
-                code: num(
-                    hourly.weather_code?.[i]
-                )
+                time:
+                    hourly.time?.[
+                        i
+                    ],
+
+                temp:
+                    num(
+                        hourly.temperature_2m?.[
+                            i
+                        ]
+                    ),
+
+                feels:
+                    num(
+                        hourly.apparent_temperature?.[
+                            i
+                        ]
+                    ),
+
+                rain:
+                    num(
+                        hourly.precipitation_probability?.[
+                            i
+                        ]
+                    ),
+
+                precipitation:
+                    num(
+                        hourly.precipitation?.[
+                            i
+                        ]
+                    ),
+
+                wind:
+                    num(
+                        hourly.wind_speed_10m?.[
+                            i
+                        ]
+                    ),
+
+                uv:
+                    num(
+                        hourly.uv_index?.[
+                            i
+                        ]
+                    ),
+
+                humidity:
+                    num(
+                        hourly.relative_humidity_2m?.[
+                            i
+                        ]
+                    ),
+
+                code:
+                    num(
+                        hourly.weather_code?.[
+                            i
+                        ]
+                    )
             });
         }
 
         return {
             city:
-                typeof currentCity !== "undefined"
-                    ? currentCity?.name || "your location"
+                typeof currentCity !==
+                "undefined"
+                    ? currentCity?.name ||
+                      "your location"
                     : "your location",
+
             unit,
             hours
         };
@@ -576,7 +789,9 @@
        SMART SCORING
     --------------------------------------------------------- */
 
-    function findBestHour(hours) {
+    function findBestHour(
+        hours
+    ) {
         if (!hours.length) {
             return null;
         }
@@ -584,18 +799,23 @@
         return [...hours]
             .map(h => {
                 const rainPenalty =
-                    Math.min(h.rain || 0, 80) * 0.55;
+                    Math.min(
+                        h.rain || 0,
+                        80
+                    ) * 0.55;
 
                 const windPenalty =
                     Math.max(
                         0,
-                        (h.wind || 0) - 18
+                        (h.wind || 0) -
+                            18
                     ) * 1.2;
 
                 const uvPenalty =
                     Math.max(
                         0,
-                        (h.uv || 0) - 7
+                        (h.uv || 0) -
+                            7
                     ) * 3;
 
                 const heatPenalty =
@@ -607,6 +827,7 @@
 
                 return {
                     ...h,
+
                     score:
                         rainPenalty +
                         windPenalty +
@@ -616,11 +837,14 @@
             })
             .sort(
                 (a, b) =>
-                    a.score - b.score
+                    a.score -
+                    b.score
             )[0];
     }
 
-    function comfortSentence(temp) {
+    function comfortSentence(
+        temp
+    ) {
         if (temp >= 36) {
             return "It will feel quite hot, so shade and hydration will matter.";
         }
@@ -668,7 +892,10 @@
         return "That looks like one of the more comfortable periods for being outside.";
     }
 
-    function clothingSentence(h, context) {
+    function clothingSentence(
+        h,
+        context
+    ) {
         if (!h) {
             return "";
         }
@@ -689,179 +916,181 @@
     }
 
     /* ---------------------------------------------------------
-       AI 3 EVENT INTERCEPTION
-       Only handles genuine AI 3 follow-ups.
+       SMART FOLLOW-UP RESPONSE HELPERS
+       ---------------------------------------------------------
+       Kept for compatibility with the AI3 context system.
+       These are NOT directly connected to the Send button.
     --------------------------------------------------------- */
 
-    function attachInterceptors() {
-        const input = $("chatInput");
-        const button = $("chatBtn");
-
-        if (!input || !button) {
-            return;
-        }
-
-        input.addEventListener(
-            "keydown",
-            event => {
-                if (
-                    event.key !== "Enter" ||
-                    event.shiftKey
-                ) {
-                    return;
-                }
-
-                const question =
-                    input.value.trim();
-
-                if (!isFollowUp(question)) {
-                    return;
-                }
-
-                const result =
-                    contextualize(question);
-
-                if (!result.handled) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopImmediatePropagation();
-
-                handleSmartQuestion(
-                    question,
-                    result
-                );
-            },
-            true
-        );
-
-        button.addEventListener(
-            "click",
-            event => {
-                const question =
-                    input.value.trim();
-
-                if (!isFollowUp(question)) {
-                    return;
-                }
-
-                const result =
-                    contextualize(question);
-
-                if (!result.handled) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopImmediatePropagation();
-
-                handleSmartQuestion(
-                    question,
-                    result
-                );
-            },
-            true
-        );
-    }
-
-    function handleSmartQuestion(
-        question,
-        result
+    function handleTimeQuestion(
+        info
     ) {
-        if (intercepting) {
-            return;
-        }
-
-        intercepting = true;
-
-        try {
-            addMessage(
-                question,
-                "user-message"
-            );
-
-            const response =
-                result.type === "time"
-                    ? handleTimeQuestion(result)
-                    : {
-                        text:
-                            buildFollowUpResponse(
-                                result
-                            ),
-                        topic:
-                            result.topic
-                    };
-
-            addMessage(
-                response.text,
-                "bot-message"
-            );
-
-            remember(
-                question,
-                response.text,
-                {
-                    topic:
-                        response.topic ||
-                        result.topic,
-
-                    intent:
-                        detectIntent(
-                            question
-                        ),
-
-                    timeReference:
-                        result.time ||
-                        result.previousTime ||
-                        detectTimeReference(
-                            question
-                        )
-                }
-            );
-
-            showSuggestions(
-                response.topic,
-                result.time
-            );
-        } finally {
-            intercepting = false;
-        }
-    }
-
-    function buildFollowUpResponse(result) {
         const context =
             getWeatherContext();
 
         if (!context) {
-            return "I'm still waiting for the latest weather data.";
+            return {
+                text:
+                    "I'm still waiting for the latest weather data to load.",
+                topic:
+                    info.topic
+            };
         }
 
-        const time =
-            result.time ||
-            result.previousTime ||
-            "today";
+        const hours =
+            context.hours;
 
-        const topic =
-            result.topic ||
-            "weather";
+        if (!hours.length) {
+            return {
+                text:
+                    "I don't have enough hourly forecast data to compare that time period yet.",
+                topic:
+                    info.topic
+            };
+        }
 
-        if (topic === "temperature") {
-            return buildExplicitQuestion(
-                "temperature",
-                time
+        let candidates =
+            hours.filter(h => {
+                const hour =
+                    getHour(
+                        h.time
+                    );
+
+                if (
+                    info.time ===
+                    "morning"
+                ) {
+                    return (
+                        hour >= 6 &&
+                        hour < 12
+                    );
+                }
+
+                if (
+                    info.time ===
+                    "afternoon"
+                ) {
+                    return (
+                        hour >= 12 &&
+                        hour < 17
+                    );
+                }
+
+                if (
+                    info.time ===
+                    "evening"
+                ) {
+                    return (
+                        hour >= 17 &&
+                        hour < 22
+                    );
+                }
+
+                if (
+                    info.time ===
+                    "tonight"
+                ) {
+                    return (
+                        hour >= 20 ||
+                        hour < 6
+                    );
+                }
+
+                return true;
+            });
+
+        if (!candidates.length) {
+            candidates = hours;
+        }
+
+        const best =
+            findBestHour(
+                candidates
             );
+
+        if (!best) {
+            return {
+                text:
+                    "I couldn't find a useful hourly forecast window.",
+                topic:
+                    info.topic
+            };
         }
 
-        if (topic === "rain") {
-            return `For **${time}**, I can check the rain risk from the hourly forecast.`;
+        const wettest =
+            [...candidates].sort(
+                (a, b) =>
+                    (b.rain || 0) -
+                    (a.rain || 0)
+            )[0];
+
+        const timeLabel =
+            capitalize(
+                info.time
+            );
+
+        let text =
+            `For **${timeLabel.toLowerCase()}**, the forecast is around ` +
+            `**${round(best.temp)}${context.unit}**, ` +
+            `with a **${round(best.rain)}%** rain chance and ` +
+            `wind around **${round(best.wind)} km/h**. `;
+
+        if (
+            wettest &&
+            wettest.rain >= 50
+        ) {
+            text +=
+                `The wetter point in this period is around **${clock(wettest.time)}**. `;
         }
 
-        if (topic === "outdoor") {
-            return `For **${time}**, I can compare the forecast's rain, wind, temperature and UV to find a comfortable window.`;
+        if (
+            info.topic ===
+            "rain"
+        ) {
+            text +=
+                best.rain >= 50
+                    ? "Rain is something I'd plan around during this period."
+                    : "There isn't a strong rain signal during this period.";
+        } else if (
+            info.topic ===
+            "temperature"
+        ) {
+            text +=
+                comfortSentence(
+                    best.feels ||
+                    best.temp
+                );
+        } else if (
+            info.topic ===
+            "outdoor"
+        ) {
+            text +=
+                outdoorSentence(
+                    best
+                );
+        } else if (
+            info.topic ===
+            "clothing"
+        ) {
+            text +=
+                clothingSentence(
+                    best,
+                    context
+                );
+        } else {
+            text +=
+                outdoorSentence(
+                    best
+                );
         }
 
-        return `For **${time}**, I'll keep the previous **${topic}** context in mind.`;
+        return {
+            text,
+            topic:
+                info.topic,
+            time:
+                info.time
+        };
     }
 
     /* ---------------------------------------------------------
@@ -870,18 +1099,21 @@
 
     function addSmartChrome() {
         const card =
-            $("chatMessages")?.closest(
-                ".ai-card"
-            );
+            $("chatMessages")
+                ?.closest(
+                    ".ai-card"
+                );
 
         if (
             !card ||
-            card.dataset.ai3Chrome
+            card.dataset
+                .ai3Chrome
         ) {
             return;
         }
 
-        card.dataset.ai3Chrome = "true";
+        card.dataset.ai3Chrome =
+            "true";
 
         const status =
             document.createElement(
@@ -894,22 +1126,28 @@
         status.innerHTML = `
             <div class="ai3-status-left">
                 <span class="ai3-dot"></span>
+
                 <div>
-                    <strong>Smart Context</strong>
+                    <strong>
+                        Smart Context
+                    </strong>
+
                     <small id="ai3ContextText">
                         Ready to remember your conversation
                     </small>
                 </div>
             </div>
 
-            <button type="button" id="ai3ClearContext">
+            <button
+                type="button"
+                id="ai3ClearContext"
+            >
                 Clear memory
             </button>
         `;
 
-        $("chatMessages").before(
-            status
-        );
+        $("chatMessages")
+            .before(status);
 
         $("ai3ClearContext")
             ?.addEventListener(
@@ -925,7 +1163,7 @@
                         "function"
                     ) {
                         showToast(
-                            "AI 3.0 memory cleared"
+                            "AI memory cleared"
                         );
                     }
                 }
@@ -962,7 +1200,9 @@
             parts.push(city);
         }
 
-        if (last.timeReference) {
+        if (
+            last.timeReference
+        ) {
             parts.push(
                 last.timeReference
             );
@@ -970,9 +1210,12 @@
 
         if (
             last.topic &&
-            last.topic !== "general"
+            last.topic !==
+                "general"
         ) {
-            parts.push(last.topic);
+            parts.push(
+                last.topic
+            );
         }
 
         label.textContent =
@@ -986,9 +1229,10 @@
         time
     ) {
         const card =
-            $("chatMessages")?.closest(
-                ".ai-card"
-            );
+            $("chatMessages")
+                ?.closest(
+                    ".ai-card"
+                );
 
         if (!card) {
             return;
@@ -1034,33 +1278,34 @@
             </div>
         `;
 
-        $("chatMessages").after(
-            wrapper
-        );
+        $("chatMessages")
+            .after(wrapper);
 
         wrapper
             .querySelectorAll(
                 "[data-ai3-question]"
             )
-            .forEach(button => {
-                button.addEventListener(
-                    "click",
-                    () => {
-                        const input =
-                            $("chatInput");
+            .forEach(
+                button => {
+                    button.addEventListener(
+                        "click",
+                        () => {
+                            const input =
+                                $("chatInput");
 
-                        if (!input) {
-                            return;
+                            if (!input) {
+                                return;
+                            }
+
+                            input.value =
+                                button.dataset
+                                    .ai3Question;
+
+                            input.focus();
                         }
-
-                        input.value =
-                            button.dataset
-                                .ai3Question;
-
-                        input.focus();
-                    }
-                );
-            });
+                    );
+                }
+            );
     }
 
     function getSuggestions(
@@ -1068,7 +1313,8 @@
         time
     ) {
         const prefix =
-            time && time !== "today"
+            time &&
+            time !== "today"
                 ? `${time} `
                 : "";
 
@@ -1076,19 +1322,22 @@
             rain: [
                 {
                     icon: "☔",
-                    label: "Umbrella?",
+                    label:
+                        "Umbrella?",
                     question:
                         `Will I need an umbrella ${prefix}today?`
                 },
                 {
                     icon: "🕐",
-                    label: "Rain timing",
+                    label:
+                        "Rain timing",
                     question:
                         `When is rain most likely ${prefix}today?`
                 },
                 {
                     icon: "🏃",
-                    label: "Outdoor plans",
+                    label:
+                        "Outdoor plans",
                     question:
                         `Is ${prefix}good for outdoor activities?`
                 }
@@ -1097,19 +1346,22 @@
             temperature: [
                 {
                     icon: "👕",
-                    label: "What to wear",
+                    label:
+                        "What to wear",
                     question:
                         `What should I wear ${prefix}today?`
                 },
                 {
                     icon: "🌡️",
-                    label: "Feels like",
+                    label:
+                        "Feels like",
                     question:
                         `What will it feel like ${prefix}today?`
                 },
                 {
                     icon: "🏃",
-                    label: "Go outside?",
+                    label:
+                        "Go outside?",
                     question:
                         `Is ${prefix}good for going outside?`
                 }
@@ -1118,19 +1370,22 @@
             outdoor: [
                 {
                     icon: "🕐",
-                    label: "Best time",
+                    label:
+                        "Best time",
                     question:
                         `What's the best time to go outside ${prefix}today?`
                 },
                 {
                     icon: "☔",
-                    label: "Rain risk",
+                    label:
+                        "Rain risk",
                     question:
                         `What's the rain risk ${prefix}today?`
                 },
                 {
                     icon: "👕",
-                    label: "What to wear",
+                    label:
+                        "What to wear",
                     question:
                         `What should I wear ${prefix}today?`
                 }
@@ -1139,13 +1394,15 @@
             clothing: [
                 {
                     icon: "☔",
-                    label: "Rain?",
+                    label:
+                        "Rain?",
                     question:
                         `Will it rain ${prefix}today?`
                 },
                 {
                     icon: "🌡️",
-                    label: "Temperature",
+                    label:
+                        "Temperature",
                     question:
                         `What's the temperature ${prefix}today?`
                 }
@@ -1156,19 +1413,22 @@
             map[topic] || [
                 {
                     icon: "🌧️",
-                    label: "Rain",
+                    label:
+                        "Rain",
                     question:
                         `Will it rain ${prefix}today?`
                 },
                 {
                     icon: "🌡️",
-                    label: "Temperature",
+                    label:
+                        "Temperature",
                     question:
                         `What's the temperature ${prefix}today?`
                 },
                 {
                     icon: "🏃",
-                    label: "Outdoors",
+                    label:
+                        "Outdoors",
                     question:
                         `Is ${prefix}good for outdoor activities?`
                 }
@@ -1178,7 +1438,7 @@
 
     /* ---------------------------------------------------------
        MESSAGE HELPERS
-    --------------------------------------------------------- */
+       --------------------------------------------------------- */
 
     function addMessage(
         text,
@@ -1204,7 +1464,9 @@
             "bot-message"
         ) {
             div.innerHTML =
-                formatText(text);
+                formatText(
+                    text
+                );
 
             const actions =
                 document.createElement(
@@ -1215,7 +1477,10 @@
                 "ai3-message-actions";
 
             actions.innerHTML = `
-                <button type="button" data-ai3-copy>
+                <button
+                    type="button"
+                    data-ai3-copy
+                >
                     Copy
                 </button>
             `;
@@ -1262,7 +1527,9 @@
             container.scrollHeight;
     }
 
-    function formatText(text) {
+    function formatText(
+        text
+    ) {
         return String(text)
             .replace(
                 /&/g,
@@ -1286,7 +1553,9 @@
             );
     }
 
-    function stripHTML(text) {
+    function stripHTML(
+        text
+    ) {
         const div =
             document.createElement(
                 "div"
@@ -1301,7 +1570,9 @@
         );
     }
 
-    function escapeHTML(value) {
+    function escapeHTML(
+        value
+    ) {
         return String(value)
             .replace(
                 /&/g,
@@ -1325,7 +1596,9 @@
             );
     }
 
-    function escapeAttr(value) {
+    function escapeAttr(
+        value
+    ) {
         return escapeHTML(
             value
         );
@@ -1335,7 +1608,9 @@
        UTILITIES
     --------------------------------------------------------- */
 
-    function normalize(text) {
+    function normalize(
+        text
+    ) {
         return String(text)
             .toLowerCase()
             .replace(
@@ -1349,7 +1624,9 @@
             .trim();
     }
 
-    function num(value) {
+    function num(
+        value
+    ) {
         const n =
             Number(value);
 
@@ -1358,13 +1635,17 @@
             : 0;
     }
 
-    function round(value) {
+    function round(
+        value
+    ) {
         return Math.round(
             num(value)
         );
     }
 
-    function getHour(value) {
+    function getHour(
+        value
+    ) {
         if (!value) {
             return -1;
         }
@@ -1383,7 +1664,9 @@
         return date.getHours();
     }
 
-    function clock(value) {
+    function clock(
+        value
+    ) {
         if (!value) {
             return "—";
         }
@@ -1394,8 +1677,10 @@
             ).toLocaleTimeString(
                 undefined,
                 {
-                    hour: "numeric",
-                    minute: "2-digit"
+                    hour:
+                        "numeric",
+                    minute:
+                        "2-digit"
                 }
             );
         } catch {
@@ -1403,18 +1688,26 @@
         }
     }
 
-    function capitalize(value) {
+    function capitalize(
+        value
+    ) {
         return (
             String(value)
                 .charAt(0)
                 .toUpperCase() +
-            String(value).slice(1)
+            String(value).slice(
+                1
+            )
         );
     }
 
     function currentLocationChanged() {
         updateContextLabel();
     }
+
+    /* ---------------------------------------------------------
+       PUBLIC AI3 API
+    --------------------------------------------------------- */
 
     window.CloudoraAI3 = {
         clearMemory() {
@@ -1425,7 +1718,21 @@
         },
 
         getContext() {
-            return [...history];
+            return [
+                ...history
+            ];
+        },
+
+        remember(
+            question,
+            answer,
+            meta = {}
+        ) {
+            remember(
+                question,
+                answer,
+                meta
+            );
         },
 
         refresh() {
@@ -1448,7 +1755,9 @@
         document.addEventListener(
             "DOMContentLoaded",
             init,
-            { once: true }
+            {
+                once: true
+            }
         );
     } else {
         init();
@@ -1458,19 +1767,15 @@
 
 
 /* ============================================================
-   CLOUDORA AI 4.0 — WEATHER REASONING LAYER
-
-   Adds:
-   - Best time reasoning
-   - Best day reasoning
-   - Rain windows
-   - Forecast trends
-   - Day comparisons
-   - Follow-up explanations
-   - Separate AI 4.0 memory
+   CLOUDORA AI 4.0 — LEGACY WEATHER REASONING COMPATIBILITY
+   ------------------------------------------------------------
+   AI 4.0 reasoning helpers are retained for compatibility.
 
    IMPORTANT:
-   AI 4.0 DOES NOT TAKE CONTROL OF THE SEND BUTTON.
+   AI 4.0 DOES NOT intercept chat input.
+
+   Cloudora AI 4.1 in ai-reasoning.js is the only answer
+   authority.
    ============================================================ */
 
 (() => {
@@ -1479,7 +1784,8 @@
     const AI4_STORAGE =
         "cloudoraAI4Context";
 
-    const AI4_MAX_MEMORY = 16;
+    const AI4_MAX_MEMORY =
+        16;
 
     let ai4Memory = [];
 
@@ -1496,10 +1802,16 @@
     function ai4Init() {
         loadAI4Memory();
         addAI4Chrome();
-        installAI4FollowUps();
+
+        /*
+         * IMPORTANT:
+         * Do NOT call installAI4FollowUps().
+         *
+         * AI 4.1 owns the actual answer generation.
+         */
 
         console.log(
-            "Cloudora AI 4.0 — Weather reasoning loaded."
+            "Cloudora AI 4.0 — Compatibility layer loaded."
         );
     }
 
@@ -1517,7 +1829,9 @@
                 );
 
             ai4Memory =
-                Array.isArray(saved)
+                Array.isArray(
+                    saved
+                )
                     ? saved.slice(
                         -AI4_MAX_MEMORY
                     )
@@ -1590,8 +1904,12 @@
        NORMALIZATION
     --------------------------------------------------------- */
 
-    function normalizeAI4(text) {
-        return String(text || "")
+    function normalizeAI4(
+        text
+    ) {
+        return String(
+            text || ""
+        )
             .toLowerCase()
             .replace(
                 /[^\w\s?'-]/g,
@@ -1604,7 +1922,9 @@
             .trim();
     }
 
-    function stripAI4HTML(text) {
+    function stripAI4HTML(
+        text
+    ) {
         const div =
             document.createElement(
                 "div"
@@ -1789,7 +2109,7 @@
     function getAI4Weather() {
         if (
             typeof weatherData ===
-            "undefined" ||
+                "undefined" ||
             !weatherData
         ) {
             return null;
@@ -1812,56 +2132,66 @@
             data.daily;
 
         return d.time.map(
-            (date, index) => ({
+            (
+                date,
+                index
+            ) => ({
                 date,
 
                 tempMax:
                     Number(
                         d.temperature_2m_max?.[
                             index
-                        ] ?? NaN
+                        ] ??
+                            NaN
                     ),
 
                 tempMin:
                     Number(
                         d.temperature_2m_min?.[
                             index
-                        ] ?? NaN
+                        ] ??
+                            NaN
                     ),
 
                 rain:
                     Number(
                         d.precipitation_probability_max?.[
                             index
-                        ] ?? 0
+                        ] ??
+                            0
                     ),
 
                 precipitation:
                     Number(
                         d.precipitation_sum?.[
                             index
-                        ] ?? 0
+                        ] ??
+                            0
                     ),
 
                 uv:
                     Number(
                         d.uv_index_max?.[
                             index
-                        ] ?? 0
+                        ] ??
+                            0
                     ),
 
                 wind:
                     Number(
                         d.wind_speed_10m_max?.[
                             index
-                        ] ?? 0
+                        ] ??
+                            0
                     ),
 
                 code:
                     Number(
                         d.weather_code?.[
                             index
-                        ] ?? -1
+                        ] ??
+                            -1
                     )
             })
         );
@@ -1907,56 +2237,64 @@
                             Number(
                                 h.temperature_2m?.[
                                     i
-                                ] ?? NaN
+                                ] ??
+                                    NaN
                             ),
 
                         feels:
                             Number(
                                 h.apparent_temperature?.[
                                     i
-                                ] ?? NaN
+                                ] ??
+                                    NaN
                             ),
 
                         rain:
                             Number(
                                 h.precipitation_probability?.[
                                     i
-                                ] ?? 0
+                                ] ??
+                                    0
                             ),
 
                         precipitation:
                             Number(
                                 h.precipitation?.[
                                     i
-                                ] ?? 0
+                                ] ??
+                                    0
                             ),
 
                         wind:
                             Number(
                                 h.wind_speed_10m?.[
                                     i
-                                ] ?? 0
+                                ] ??
+                                    0
                             ),
 
                         uv:
                             Number(
                                 h.uv_index?.[
                                     i
-                                ] ?? 0
+                                ] ??
+                                    0
                             ),
 
                         humidity:
                             Number(
                                 h.relative_humidity_2m?.[
                                     i
-                                ] ?? 0
+                                ] ??
+                                    0
                             ),
 
                         code:
                             Number(
                                 h.weather_code?.[
                                     i
-                                ] ?? -1
+                                ] ??
+                                    -1
                             )
                     };
                 }
@@ -1967,7 +2305,9 @@
        SCORING
     --------------------------------------------------------- */
 
-    function scoreHour(hour) {
+    function scoreHour(
+        hour
+    ) {
         if (!hour) {
             return Infinity;
         }
@@ -1980,13 +2320,17 @@
                 100
             ) * 0.65;
 
-        if (hour.wind > 18) {
+        if (
+            hour.wind > 18
+        ) {
             score +=
                 (hour.wind - 18) *
                 1.25;
         }
 
-        if (hour.temp >= 34) {
+        if (
+            hour.temp >= 34
+        ) {
             score += 14;
         } else if (
             hour.temp >= 31
@@ -1994,22 +2338,30 @@
             score += 6;
         }
 
-        if (hour.temp < 12) {
+        if (
+            hour.temp < 12
+        ) {
             score += 7;
         }
 
-        if (hour.uv >= 8) {
+        if (
+            hour.uv >= 8
+        ) {
             score += 6;
         }
 
-        if (hour.humidity >= 90) {
+        if (
+            hour.humidity >= 90
+        ) {
             score += 5;
         }
 
         return score;
     }
 
-    function scoreDay(day) {
+    function scoreDay(
+        day
+    ) {
         if (!day) {
             return Infinity;
         }
@@ -2022,13 +2374,17 @@
                 100
             ) * 0.6;
 
-        if (day.wind > 30) {
+        if (
+            day.wind > 30
+        ) {
             score +=
                 (day.wind - 30) *
                 1.2;
         }
 
-        if (day.tempMax >= 36) {
+        if (
+            day.tempMax >= 36
+        ) {
             score += 14;
         } else if (
             day.tempMax >= 33
@@ -2036,11 +2392,15 @@
             score += 6;
         }
 
-        if (day.tempMin < 12) {
+        if (
+            day.tempMin < 12
+        ) {
             score += 5;
         }
 
-        if (day.uv >= 9) {
+        if (
+            day.uv >= 9
+        ) {
             score += 5;
         }
 
@@ -2051,7 +2411,9 @@
        DATE LABELS
     --------------------------------------------------------- */
 
-    function ai4DayLabel(index) {
+    function ai4DayLabel(
+        index
+    ) {
         if (index === 0) {
             return "today";
         }
@@ -2080,7 +2442,9 @@
             ]?.date;
 
         if (!date) {
-            return `day ${index + 1}`;
+            return `day ${
+                index + 1
+            }`;
         }
 
         const d =
@@ -2101,7 +2465,9 @@
         const days =
             getAI4Days();
 
-        if (days.length < 2) {
+        if (
+            days.length < 2
+        ) {
             return null;
         }
 
@@ -2143,13 +2509,19 @@
         }
 
         let bestIndex = 0;
+
         let bestScore =
             Infinity;
 
         days.forEach(
-            (day, index) => {
+            (
+                day,
+                index
+            ) => {
                 const score =
-                    scoreDay(day);
+                    scoreDay(
+                        day
+                    );
 
                 if (
                     score <
@@ -2165,8 +2537,13 @@
         );
 
         return {
-            ...days[bestIndex],
-            index: bestIndex,
+            ...days[
+                bestIndex
+            ],
+
+            index:
+                bestIndex,
+
             label:
                 ai4DayLabel(
                     bestIndex
@@ -2221,7 +2598,8 @@
 
         const rainy =
             hours.filter(
-                h => h.rain >= 50
+                h =>
+                    h.rain >= 50
             );
 
         if (!rainy.length) {
@@ -2233,7 +2611,8 @@
         const highest =
             [...rainy].sort(
                 (a, b) =>
-                    b.rain - a.rain
+                    b.rain -
+                    a.rain
             )[0];
 
         return {
@@ -2246,7 +2625,9 @@
        FORMAT TIME
     --------------------------------------------------------- */
 
-    function formatAI4Time(time) {
+    function formatAI4Time(
+        time
+    ) {
         if (!time) {
             return "then";
         }
@@ -2265,13 +2646,17 @@
         return date.toLocaleTimeString(
             [],
             {
-                hour: "numeric",
-                minute: "2-digit"
+                hour:
+                    "numeric",
+                minute:
+                    "2-digit"
             }
         );
     }
 
-    function formatAI4Temp(value) {
+    function formatAI4Temp(
+        value
+    ) {
         if (
             !Number.isFinite(
                 value
@@ -2282,9 +2667,9 @@
 
         const unit =
             typeof temperatureUnit !==
-            "undefined" &&
+                "undefined" &&
             temperatureUnit ===
-            "fahrenheit"
+                "fahrenheit"
                 ? "°F"
                 : "°C";
 
@@ -2295,6 +2680,8 @@
 
     /* ---------------------------------------------------------
        NATURAL REASONING
+       ---------------------------------------------------------
+       Legacy helper functions retained for compatibility.
     --------------------------------------------------------- */
 
     function reasonOutdoor() {
@@ -2316,7 +2703,9 @@
             `**${formatAI4Temp(best.feels || best.temp)}** feels-like temperature ` +
             `and wind around **${Math.round(best.wind)} km/h**. `;
 
-        if (best.uv >= 7) {
+        if (
+            best.uv >= 7
+        ) {
             answer +=
                 "UV is also fairly strong, so sun protection would help.";
         } else if (
@@ -2336,7 +2725,9 @@
         const window =
             findRainWindow();
 
-        if (!window?.exists) {
+        if (
+            !window?.exists
+        ) {
             return "I don't see a strong rain signal in the next 48 hours based on the available forecast.";
         }
 
@@ -2363,7 +2754,8 @@
             ) >= 2
         ) {
             changes.push(
-                trend.tempChange > 0
+                trend.tempChange >
+                    0
                     ? `temperatures rise by about ${Math.abs(Math.round(trend.tempChange))}°`
                     : `temperatures fall by about ${Math.abs(Math.round(trend.tempChange))}°`
             );
@@ -2375,7 +2767,8 @@
             ) >= 15
         ) {
             changes.push(
-                trend.rainChange > 0
+                trend.rainChange >
+                    0
                     ? "rain risk increases"
                     : "rain risk decreases"
             );
@@ -2387,7 +2780,8 @@
             ) >= 8
         ) {
             changes.push(
-                trend.windChange > 0
+                trend.windChange >
+                    0
                     ? "winds become stronger"
                     : "winds ease"
             );
@@ -2397,7 +2791,9 @@
             return "Tomorrow looks broadly similar to today, without a major change in the main weather signals.";
         }
 
-        return `Compared with today, tomorrow shows ${joinNatural(changes)}.`;
+        return `Compared with today, tomorrow shows ${joinNatural(
+            changes
+        )}.`;
     }
 
     function reasonBestDay() {
@@ -2420,7 +2816,9 @@
         const days =
             getAI4Days();
 
-        if (days.length < 2) {
+        if (
+            days.length < 2
+        ) {
             return "I don't have enough days loaded to make that comparison.";
         }
 
@@ -2450,7 +2848,9 @@
             `**${Math.round(tomorrow.rain)}%** rain risk with a high near ` +
             `**${formatAI4Temp(tomorrow.tempMax)}**. `;
 
-        if (betterTomorrow) {
+        if (
+            betterTomorrow
+        ) {
             answer +=
                 "Overall, tomorrow's forecast signals are less restrictive.";
         } else {
@@ -2466,31 +2866,45 @@
             answer +=
                 tempDifference > 0
                     ? ` Tomorrow is roughly ${tempDifference}° warmer.`
-                    : ` Tomorrow is roughly ${Math.abs(tempDifference)}° cooler.`;
+                    : ` Tomorrow is roughly ${Math.abs(
+                        tempDifference
+                    )}° cooler.`;
         }
 
         return answer;
     }
 
-    function joinNatural(items) {
-        if (items.length === 1) {
+    function joinNatural(
+        items
+    ) {
+        if (
+            items.length === 1
+        ) {
             return items[0];
         }
 
-        if (items.length === 2) {
+        if (
+            items.length === 2
+        ) {
             return `${items[0]} and ${items[1]}`;
         }
 
         return `${items
             .slice(0, -1)
-            .join(", ")}, and ${items[items.length - 1]}`;
+            .join(", ")}, and ${
+            items[
+                items.length - 1
+            ]
+        }`;
     }
 
     /* ---------------------------------------------------------
        FOLLOW-UP INTERPRETATION
-    --------------------------------------------------------- */
+       --------------------------------------------------------- */
 
-    function interpretAI4(question) {
+    function interpretAI4(
+        question
+    ) {
         const text =
             normalizeAI4(
                 question
@@ -2499,7 +2913,11 @@
         const last =
             lastAI4Memory();
 
-        if (/^why\b/.test(text)) {
+        if (
+            /^why\b/.test(
+                text
+            )
+        ) {
             return {
                 type: "why",
                 topic:
@@ -2568,7 +2986,8 @@
         ) {
             return {
                 type: "outdoor",
-                topic: "outdoor"
+                topic:
+                    "outdoor"
             };
         }
 
@@ -2579,7 +2998,8 @@
         ) {
             return {
                 type: "rain",
-                topic: "rain"
+                topic:
+                    "rain"
             };
         }
 
@@ -2587,10 +3007,15 @@
     }
 
     /* ---------------------------------------------------------
-       ANSWER GENERATOR
+       LEGACY ANSWER GENERATOR
+       ---------------------------------------------------------
+       This function is intentionally NOT connected to chat.
+       AI 4.1 is the active answer engine.
     --------------------------------------------------------- */
 
-    function answerAI4(question) {
+    function answerAI4(
+        question
+    ) {
         const interpretation =
             interpretAI4(
                 question
@@ -2678,7 +3103,8 @@
             last.topic;
 
         if (
-            topic === "outdoor"
+            topic ===
+            "outdoor"
         ) {
             return (
                 "I based that recommendation mainly on rain probability, wind, " +
@@ -2688,7 +3114,8 @@
         }
 
         if (
-            topic === "rain"
+            topic ===
+            "rain"
         ) {
             return (
                 "I mainly use precipitation probability and the hourly forecast " +
@@ -2699,109 +3126,6 @@
         return (
             "I based the previous answer on the current forecast data, especially " +
             "temperature, rain probability, wind, UV, and the relevant hourly period."
-        );
-    }
-
-    /* ---------------------------------------------------------
-       AI 4 EVENT INTERCEPTION
-
-       IMPORTANT:
-       NO SEND BUTTON LISTENER HERE.
-
-       This prevents AI 4 from fighting with ai-engine.js
-       and AI 3.0.
-    --------------------------------------------------------- */
-
-    function installAI4FollowUps() {
-        const input =
-            q$("chatInput");
-
-        if (!input) {
-            setTimeout(
-                installAI4FollowUps,
-                700
-            );
-
-            return;
-        }
-
-        if (
-            input.dataset
-                .ai4Installed ===
-            "true"
-        ) {
-            return;
-        }
-
-        input.dataset.ai4Installed =
-            "true";
-
-        input.addEventListener(
-            "keydown",
-            event => {
-                if (
-                    event.key !==
-                        "Enter" ||
-                    event.shiftKey
-                ) {
-                    return;
-                }
-
-                const question =
-                    input.value.trim();
-
-                if (!question) {
-                    return;
-                }
-
-                let answer = null;
-
-                try {
-                    answer =
-                        answerAI4(
-                            question
-                        );
-                } catch (
-                    error
-                ) {
-                    console.error(
-                        "Cloudora AI 4.0 error:",
-                        error
-                    );
-
-                    answer = null;
-                }
-
-                /*
-                   If AI 4.0 does not understand
-                   the question, do nothing.
-
-                   The original Cloudora AI
-                   will handle it.
-                */
-                if (!answer) {
-                    return;
-                }
-
-                event.preventDefault();
-
-                event.stopImmediatePropagation();
-
-                addMessage(
-                    question,
-                    "user-message"
-                );
-
-                addMessage(
-                    answer,
-                    "bot-message"
-                );
-
-                input.value = "";
-
-                input.focus();
-            },
-            true
         );
     }
 
@@ -2838,11 +3162,11 @@
         bar.innerHTML = `
             <div>
                 <strong>
-                    Cloudora AI 4.0
+                    Cloudora AI 4.1
                 </strong>
 
                 <small>
-                    Weather reasoning enabled
+                    Advanced weather reasoning enabled
                 </small>
             </div>
 
@@ -2856,7 +3180,41 @@
     }
 
     /* ---------------------------------------------------------
-       START AI 4.0
+       PUBLIC AI4 COMPATIBILITY API
+    --------------------------------------------------------- */
+
+    window.CloudoraAI4 = {
+        clearMemory() {
+            ai4Memory = [];
+
+            saveAI4Memory();
+        },
+
+        getMemory() {
+            return [
+                ...ai4Memory
+            ];
+        },
+
+        refresh() {
+            loadAI4Memory();
+        },
+
+        analyzeTrend:
+            analyzeAI4Trend,
+
+        findBestDay:
+            findBestDay,
+
+        findBestTime:
+            findBestTime,
+
+        findRainWindow:
+            findRainWindow
+    };
+
+    /* ---------------------------------------------------------
+       START AI 4.0 COMPATIBILITY LAYER
     --------------------------------------------------------- */
 
     if (
@@ -2866,7 +3224,9 @@
         document.addEventListener(
             "DOMContentLoaded",
             ai4Init,
-            { once: true }
+            {
+                once: true
+            }
         );
     } else {
         ai4Init();
