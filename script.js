@@ -36,6 +36,7 @@ let weatherData = null;
 
 let temperatureUnit =
     localStorage.getItem("cloudoraUnit") || "celsius";
+    window.temperatureUnit = temperatureUnit;
 
 let savedCities =
     JSON.parse(
@@ -201,7 +202,10 @@ function setupEvents() {
         "click",
         sendChatMessage
     );
-
+    // Cloudora AI 4.1 integration
+    if (window.CloudoraAI41) {
+      console.log("Cloudora AI 4.1 integration ready.");
+    }
 
     chatInput.addEventListener(
         "keydown",
@@ -493,10 +497,17 @@ async function loadWeather(city) {
 
 
         weatherData =
-            await response.json();
+        await response.json();
 
+        /*
+        * Cloudora AI 4.1 bridge
+        * Expose the live forecast to the reasoning engine.
+        */
+        window.weatherData = weatherData;
 
         currentCity = city;
+
+        window.currentCity = currentCity;
 
 
         renderCurrentWeather();
@@ -1870,7 +1881,8 @@ function toggleUnit() {
             ? "fahrenheit"
             : "celsius";
 
-
+    window.temperatureUnit = temperatureUnit;
+    
     localStorage.setItem(
         "cloudoraUnit",
         temperatureUnit
@@ -1879,6 +1891,7 @@ function toggleUnit() {
 
     updateUnitButton();
 
+    window.currentCity = currentCity;
     loadWeather(currentCity);
 
 }
@@ -2162,24 +2175,50 @@ function sendChatMessage() {
     const question =
         chatInput.value.trim();
 
-
     if (!question) return;
-
 
     addChatMessage(
         question,
         "user"
     );
 
-
     chatInput.value = "";
 
+    let answer = null;
 
-    const answer =
-        generateAIAnswer(
-            question.toLowerCase()
-        );
+    /*
+     * AI 4.1 handles advanced weather reasoning.
+     * Existing Cloudora AI remains the fallback.
+     */
+    if (
+        window.CloudoraAI41 &&
+        typeof window.CloudoraAI41.answer === "function"
+    ) {
+        try {
+            answer =
+                window.CloudoraAI41.answer(
+                    question
+                );
+        } catch (error) {
+            console.error(
+                "Cloudora AI 4.1 error:",
+                error
+            );
 
+            answer = null;
+        }
+    }
+
+    /*
+     * If AI 4.1 cannot answer,
+     * use the existing Cloudora AI.
+     */
+    if (!answer) {
+        answer =
+            generateAIAnswer(
+                question.toLowerCase()
+            );
+    }
 
     setTimeout(
         () => {
@@ -2192,7 +2231,6 @@ function sendChatMessage() {
         },
         400
     );
-
 }
 
 
@@ -2230,6 +2268,63 @@ function addChatMessage(
 
 function generateAIAnswer(question) {
 
+    const cleanQuestion =
+        String(question || "").trim();
+
+    if (!cleanQuestion) {
+        return "";
+    }
+
+    /*
+     * ========================================================
+     * CLOUDORA AI 4.1
+     * ========================================================
+     *
+     * Give advanced weather questions to the reasoning engine.
+     * If anything goes wrong, automatically fall back to the
+     * original Cloudora AI below.
+     */
+
+    if (
+        window.CloudoraAI41 &&
+        typeof window.CloudoraAI41.answer === "function"
+    ) {
+
+        try {
+
+            const advancedAnswer =
+                window.CloudoraAI41.answer(
+                    cleanQuestion
+                );
+
+            if (
+                advancedAnswer &&
+                typeof advancedAnswer === "string" &&
+                advancedAnswer.trim()
+            ) {
+
+                return advancedAnswer;
+
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Cloudora AI 4.1 failed. Using fallback AI.",
+                error
+            );
+
+        }
+
+    }
+
+
+    /*
+     * ========================================================
+     * ORIGINAL CLOUDORA WEATHER AI
+     * ========================================================
+     */
+
     if (!weatherData) {
 
         return "Weather information is still loading.";
@@ -2239,7 +2334,6 @@ function generateAIAnswer(question) {
 
     const current =
         weatherData.current;
-
 
     const daily =
         weatherData.daily;
@@ -2265,9 +2359,15 @@ function generateAIAnswer(question) {
         );
 
 
+    /*
+     * --------------------------------------------------------
+     * RAIN / UMBRELLA
+     * --------------------------------------------------------
+     */
+
     if (
-        question.includes("umbrella") ||
-        question.includes("rain")
+        cleanQuestion.toLowerCase().includes("umbrella") ||
+        cleanQuestion.toLowerCase().includes("rain")
     ) {
 
         if (rain >= 60) {
@@ -2281,9 +2381,15 @@ function generateAIAnswer(question) {
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * TEMPERATURE
+     * --------------------------------------------------------
+     */
+
     if (
-        question.includes("hot") ||
-        question.includes("temperature")
+        cleanQuestion.toLowerCase().includes("hot") ||
+        cleanQuestion.toLowerCase().includes("temperature")
     ) {
 
         if (temperature >= 35) {
@@ -2303,10 +2409,16 @@ function generateAIAnswer(question) {
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * OUTDOOR
+     * --------------------------------------------------------
+     */
+
     if (
-        question.includes("outdoor") ||
-        question.includes("outside") ||
-        question.includes("activity")
+        cleanQuestion.toLowerCase().includes("outdoor") ||
+        cleanQuestion.toLowerCase().includes("outside") ||
+        cleanQuestion.toLowerCase().includes("activity")
     ) {
 
         if (
@@ -2323,36 +2435,69 @@ function generateAIAnswer(question) {
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * AIR QUALITY
+     * --------------------------------------------------------
+     */
+
     if (
-        question.includes("air") ||
-        question.includes("pollution")
+        cleanQuestion.toLowerCase().includes("air") ||
+        cleanQuestion.toLowerCase().includes("pollution")
     ) {
 
+        const aqiElement =
+            $("aqiValue");
+
         const aqi =
-            $("aqiValue").textContent;
+            aqiElement
+                ? aqiElement.textContent
+                : "unavailable";
 
         return `The current Cloudora air-quality reading is AQI ${aqi}. Check the Air Quality section for pollutant details.`;
 
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * UV
+     * --------------------------------------------------------
+     */
+
     if (
-        question.includes("uv")
+        cleanQuestion.toLowerCase().includes("uv")
     ) {
 
-        return `Today's maximum UV index is around ${uv}. ${uv >= 6 ? "Consider sun protection." : "UV levels should be relatively manageable."}`;
+        return `Today's maximum UV index is around ${uv}. ${
+            uv >= 6
+                ? "Consider sun protection."
+                : "UV levels should be relatively manageable."
+        }`;
 
     }
 
 
+    /*
+     * --------------------------------------------------------
+     * WIND
+     * --------------------------------------------------------
+     */
+
     if (
-        question.includes("wind")
+        cleanQuestion.toLowerCase().includes("wind")
     ) {
 
         return `The current wind speed is around ${wind} km/h.`;
 
     }
 
+
+    /*
+     * --------------------------------------------------------
+     * GENERAL FALLBACK
+     * --------------------------------------------------------
+     */
 
     return `In ${currentCity.name}, it is currently ${temperature}° with ${getWeatherDescription(current.weather_code).toLowerCase()}. Today's rain probability is about ${rain}%.`;
 
