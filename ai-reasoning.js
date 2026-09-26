@@ -1,46 +1,74 @@
 /* ============================================================
-   CLOUDORA AI 4.2 — ADAPTIVE WEATHER INTELLIGENCE ENGINE
+   CLOUDORA AI 4.3 — CONVERSATIONAL WEATHER INTELLIGENCE
    ------------------------------------------------------------
    Production reasoning layer for Cloudora.
 
    4.1 foundation:
    - Multi-factor weather analysis
-   - Strong rain avoidance
+   - Rain avoidance
    - Best / worst time detection
-   - Activity-specific recommendations
+   - Activity recommendations
    - Running / walking safety logic
    - Rain-window analysis
    - Heat / cold analysis
-   - Wind analysis
-   - UV analysis
-   - Humidity analysis
+   - Wind / UV / humidity analysis
    - Clothing recommendations
    - Today vs tomorrow comparisons
-   - Tomorrow forecast questions
    - Weather-change questions
    - Air-quality awareness
    - "Why?" explanations
 
-   4.2 upgrades:
+   4.2:
    - Multi-hour weather windows
-   - Better rain transition detection
-   - Rain start / peak / easing / end analysis
+   - Rain transition detection
+   - Rain start / peak / easing / end
    - Recommendation confidence
-   - Multi-factor window scoring
-   - Unit-aware temperature reasoning
-   - Better activity explanations
-   - Better tomorrow analysis
-   - Adaptive recommendation explanations
-   - CloudoraAI42 public API
+   - Window scoring
+   - Unit-aware reasoning
+   - Adaptive explanations
+
+   4.3:
+   - Conversational context
+   - Follow-up question understanding
+   - Exact-time reasoning
+   - Time-of-day reasoning
+   - Morning / afternoon / evening / night detection
+   - Better activity intent detection
+   - Better rain-window reasoning
+   - Decision risk levels
+   - Factor-based explanations
+   - Context-aware "why?"
+   - Context-aware "what about tomorrow?"
+   - Context-aware "what about 6 PM?"
+   - More natural weather answers
+   - CloudoraAI43 public API
+   - CloudoraAI42 backward compatibility
    - CloudoraAI41 backward compatibility
    ============================================================ */
 
 (() => {
     "use strict";
 
-    const VERSION = "4.2";
+    const VERSION = "4.3";
 
     let lastDecision = null;
+
+    /*
+     * Conversation memory.
+     *
+     * This intentionally stays lightweight.
+     * It remembers weather-related context rather than
+     * storing an unlimited chat history.
+     */
+    let conversationContext = {
+        lastQuestion: "",
+        lastIntent: "",
+        lastActivity: "",
+        lastTime: null,
+        lastTimeLabel: "",
+        lastAnswerType: "",
+        lastDecisionType: ""
+    };
 
     /* ========================================================
        BASIC HELPERS
@@ -79,11 +107,7 @@
     }
 
     function getWeather() {
-        if (!window.weatherData) {
-            return null;
-        }
-
-        return window.weatherData;
+        return window.weatherData || null;
     }
 
     function formatTemp(value) {
@@ -107,17 +131,12 @@
         });
     }
 
-    function getLocalTemperature(value) {
-        return number(value);
-    }
-
-    /*
-     * The weather API data is normally Celsius.
-     * All reasoning thresholds remain Celsius internally.
-     * This prevents Fahrenheit UI settings from corrupting
-     * the actual weather calculations.
-     */
     function toCelsius(value) {
+        /*
+         * Open-Meteo's weather data is normally Celsius.
+         * Keep calculations in Celsius and only convert
+         * presentation through the existing Cloudora UI.
+         */
         return number(value);
     }
 
@@ -126,10 +145,289 @@
     }
 
     /* ========================================================
+       DATE / TIME HELPERS
+       ======================================================== */
+
+    function localDateKey(date = new Date()) {
+        const year =
+            date.getFullYear();
+
+        const month =
+            String(
+                date.getMonth() + 1
+            ).padStart(2, "0");
+
+        const day =
+            String(
+                date.getDate()
+            ).padStart(2, "0");
+
+        return `${year}-${month}-${day}`;
+    }
+
+    function getForecastDateKey(value) {
+        if (!value) {
+            return "";
+        }
+
+        const text =
+            String(value);
+
+        /*
+         * Open-Meteo hourly timestamps are normally
+         * already formatted as local forecast time.
+         */
+        if (
+            /^\d{4}-\d{2}-\d{2}/.test(text)
+        ) {
+            return text.slice(0, 10);
+        }
+
+        const date =
+            new Date(value);
+
+        if (
+            Number.isNaN(
+                date.getTime()
+            )
+        ) {
+            return "";
+        }
+
+        return localDateKey(date);
+    }
+
+    function parseClockTime(text) {
+        const normalized =
+            normalize(text);
+
+        /*
+         * 6 PM / 6:30 PM / 18:30
+         */
+        const twelveHour =
+            normalized.match(
+                /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/
+            );
+
+        if (twelveHour) {
+            let hour =
+                Number(
+                    twelveHour[1]
+                );
+
+            const minute =
+                Number(
+                    twelveHour[2] || 0
+                );
+
+            const meridiem =
+                twelveHour[3];
+
+            if (
+                hour < 1 ||
+                hour > 12 ||
+                minute > 59
+            ) {
+                return null;
+            }
+
+            if (
+                meridiem === "pm" &&
+                hour !== 12
+            ) {
+                hour += 12;
+            }
+
+            if (
+                meridiem === "am" &&
+                hour === 12
+            ) {
+                hour = 0;
+            }
+
+            return {
+                hour,
+                minute,
+                label:
+                    `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+            };
+        }
+
+        /*
+         * 18:30
+         */
+        const twentyFour =
+            normalized.match(
+                /\b([01]?\d|2[0-3]):([0-5]\d)\b/
+            );
+
+        if (twentyFour) {
+            const hour =
+                Number(
+                    twentyFour[1]
+                );
+
+            const minute =
+                Number(
+                    twentyFour[2]
+                );
+
+            return {
+                hour,
+                minute,
+                label:
+                    `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+            };
+        }
+
+        /*
+         * Natural time phrases.
+         */
+        if (
+            /\bmidnight\b/.test(
+                normalized
+            )
+        ) {
+            return {
+                hour: 0,
+                minute: 0,
+                label: "00:00"
+            };
+        }
+
+        if (
+            /\bnoon\b/.test(
+                normalized
+            )
+        ) {
+            return {
+                hour: 12,
+                minute: 0,
+                label: "12:00"
+            };
+        }
+
+        return null;
+    }
+
+    function detectTimeOfDay(text) {
+        const normalized =
+            normalize(text);
+
+        if (
+            /\b(morning|early morning|sunrise)\b/.test(
+                normalized
+            )
+        ) {
+            return "morning";
+        }
+
+        if (
+            /\b(afternoon|midday)\b/.test(
+                normalized
+            )
+        ) {
+            return "afternoon";
+        }
+
+        if (
+            /\b(evening|sunset)\b/.test(
+                normalized
+            )
+        ) {
+            return "evening";
+        }
+
+        if (
+            /\b(night|tonight|late night)\b/.test(
+                normalized
+            )
+        ) {
+            return "night";
+        }
+
+        return null;
+    }
+
+    function timeOfDayRange(period) {
+        switch (period) {
+            case "morning":
+                return {
+                    start: 5,
+                    end: 11
+                };
+
+            case "afternoon":
+                return {
+                    start: 12,
+                    end: 16
+                };
+
+            case "evening":
+                return {
+                    start: 17,
+                    end: 20
+                };
+
+            case "night":
+                return {
+                    start: 21,
+                    end: 23
+                };
+
+            default:
+                return null;
+        }
+    }
+
+    function hourMatchesPeriod(
+        hour,
+        period
+    ) {
+        if (
+            !hour?.time ||
+            !period
+        ) {
+            return false;
+        }
+
+        const date =
+            new Date(hour.time);
+
+        if (
+            Number.isNaN(
+                date.getTime()
+            )
+        ) {
+            return false;
+        }
+
+        const range =
+            timeOfDayRange(
+                period
+            );
+
+        if (!range) {
+            return false;
+        }
+
+        const h =
+            date.getHours();
+
+        return (
+            h >= range.start &&
+            h <= range.end
+        );
+    }
+
+    /* ========================================================
        WEATHER DATA
        ======================================================== */
 
-    function createHourlyObject(data, i) {
+    function createHourlyObject(
+        data,
+        i
+    ) {
         return {
             index: i,
 
@@ -138,70 +436,92 @@
 
             temp:
                 number(
-                    data?.hourly?.temperature_2m?.[i]
+                    data?.hourly
+                        ?.temperature_2m?.[i]
                 ),
 
             feels:
                 number(
-                    data?.hourly?.apparent_temperature?.[i]
+                    data?.hourly
+                        ?.apparent_temperature?.[i]
                 ),
 
             rainChance:
                 number(
-                    data?.hourly?.precipitation_probability?.[i]
+                    data?.hourly
+                        ?.precipitation_probability?.[i]
                 ),
 
             precipitation:
                 number(
-                    data?.hourly?.precipitation?.[i]
+                    data?.hourly
+                        ?.precipitation?.[i]
                 ),
 
             wind:
                 number(
-                    data?.hourly?.wind_speed_10m?.[i]
+                    data?.hourly
+                        ?.wind_speed_10m?.[i]
                 ),
 
             humidity:
                 number(
-                    data?.hourly?.relative_humidity_2m?.[i]
+                    data?.hourly
+                        ?.relative_humidity_2m?.[i]
                 ),
 
             uv:
                 number(
-                    data?.hourly?.uv_index?.[i]
+                    data?.hourly
+                        ?.uv_index?.[i]
                 ),
 
             code:
                 number(
-                    data?.hourly?.weather_code?.[i]
+                    data?.hourly
+                        ?.weather_code?.[i]
                 )
         };
     }
 
-    function getHourlyData(startIndex = null, count = 24) {
-        const data = getWeather();
+    function getHourlyData(
+        startIndex = null,
+        count = 24
+    ) {
+        const data =
+            getWeather();
 
-        if (!data || !data.hourly) {
+        if (
+            !data ||
+            !data.hourly
+        ) {
             return [];
         }
 
-        let index = startIndex;
+        let index =
+            startIndex;
 
         if (
             index === null &&
-            typeof window.getCurrentHourlyIndex === "function"
+            typeof window.getCurrentHourlyIndex ===
+                "function"
         ) {
-            index = window.getCurrentHourlyIndex();
+            index =
+                window.getCurrentHourlyIndex();
         }
 
-        if (!Number.isFinite(index)) {
+        if (
+            !Number.isFinite(index)
+        ) {
             index = 0;
         }
 
-        const hourly = data.hourly;
+        const hourly =
+            data.hourly;
 
         const total =
-            hourly.time?.length || 0;
+            hourly.time?.length ||
+            0;
 
         const end =
             Math.min(
@@ -217,18 +537,25 @@
             i++
         ) {
             result.push(
-                createHourlyObject(data, i)
+                createHourlyObject(
+                    data,
+                    i
+                )
             );
         }
 
         return result;
     }
 
-    function getFutureHours(daysAhead = 0) {
+    function getFutureHours(
+        daysAhead = 0
+    ) {
         const data =
             getWeather();
 
-        if (!data?.hourly?.time) {
+        if (
+            !data?.hourly?.time
+        ) {
             return [];
         }
 
@@ -240,9 +567,15 @@
             daysAhead
         );
 
+        /*
+         * IMPORTANT:
+         * Do not use toISOString() here.
+         * It can shift the date because of UTC conversion.
+         */
         const targetDate =
-            target.toISOString()
-                .slice(0, 10);
+            localDateKey(
+                target
+            );
 
         const result = [];
 
@@ -255,8 +588,9 @@
                 data.hourly.time[i];
 
             if (
-                !String(time)
-                    .startsWith(targetDate)
+                getForecastDateKey(
+                    time
+                ) !== targetDate
             ) {
                 continue;
             }
@@ -273,6 +607,150 @@
     }
 
     /* ========================================================
+       WEATHER CODE INTELLIGENCE
+       ======================================================== */
+
+    function weatherCodeInfo(
+        code
+    ) {
+        const value =
+            number(code);
+
+        if (
+            value === 0
+        ) {
+            return {
+                label: "clear sky",
+                category: "clear",
+                severity: 0
+            };
+        }
+
+        if (
+            value === 1 ||
+            value === 2
+        ) {
+            return {
+                label: "partly cloudy",
+                category: "cloud",
+                severity: 1
+            };
+        }
+
+        if (
+            value === 3
+        ) {
+            return {
+                label: "overcast",
+                category: "cloud",
+                severity: 1
+            };
+        }
+
+        if (
+            [45, 48].includes(value)
+        ) {
+            return {
+                label: "foggy",
+                category: "visibility",
+                severity: 2
+            };
+        }
+
+        if (
+            [51, 53, 55].includes(value)
+        ) {
+            return {
+                label: "drizzle",
+                category: "rain",
+                severity: 2
+            };
+        }
+
+        if (
+            [56, 57].includes(value)
+        ) {
+            return {
+                label: "freezing drizzle",
+                category: "rain",
+                severity: 3
+            };
+        }
+
+        if (
+            [61, 63, 65].includes(value)
+        ) {
+            return {
+                label: "rain",
+                category: "rain",
+                severity:
+                    value === 65
+                        ? 4
+                        : 3
+            };
+        }
+
+        if (
+            [66, 67].includes(value)
+        ) {
+            return {
+                label: "freezing rain",
+                category: "rain",
+                severity: 4
+            };
+        }
+
+        if (
+            [71, 73, 75, 77].includes(value)
+        ) {
+            return {
+                label: "snow",
+                category: "snow",
+                severity: 4
+            };
+        }
+
+        if (
+            [80, 81, 82].includes(value)
+        ) {
+            return {
+                label: "rain showers",
+                category: "rain",
+                severity:
+                    value === 82
+                        ? 4
+                        : 3
+            };
+        }
+
+        if (
+            [85, 86].includes(value)
+        ) {
+            return {
+                label: "snow showers",
+                category: "snow",
+                severity: 4
+            };
+        }
+
+        if (
+            [95, 96, 99].includes(value)
+        ) {
+            return {
+                label: "thunderstorm",
+                category: "storm",
+                severity: 5
+            };
+        }
+
+        return {
+            label: "mixed conditions",
+            category: "mixed",
+            severity: 1
+        };
+    }
+
+    /* ========================================================
        WEATHER CONDITION HELPERS
        ======================================================== */
 
@@ -282,8 +760,12 @@
         }
 
         return (
-            number(hour.rainChance) >= 60 ||
-            number(hour.precipitation) >= 0.5 ||
+            number(
+                hour.rainChance
+            ) >= 60 ||
+            number(
+                hour.precipitation
+            ) >= 0.5 ||
             [
                 51,
                 53,
@@ -310,8 +792,12 @@
         }
 
         return (
-            number(hour.rainChance) >= 80 ||
-            number(hour.precipitation) >= 2 ||
+            number(
+                hour.rainChance
+            ) >= 80 ||
+            number(
+                hour.precipitation
+            ) >= 2 ||
             [
                 63,
                 65,
@@ -389,11 +875,6 @@
         return 0;
     }
 
-    /*
-     * Forecast data is calculated in Celsius.
-     * These thresholds intentionally stay Celsius even
-     * when the Cloudora UI displays Fahrenheit.
-     */
     function heatScore(hour) {
         const temp =
             toCelsius(
@@ -454,6 +935,273 @@
     }
 
     /* ========================================================
+       FACTOR ANALYSIS 4.3
+       ======================================================== */
+
+    function getWeatherFactors(
+        hour
+    ) {
+        if (!hour) {
+            return [];
+        }
+
+        const factors = [];
+
+        const rain =
+            number(
+                hour.rainChance
+            );
+
+        const precipitation =
+            number(
+                hour.precipitation
+            );
+
+        const wind =
+            number(
+                hour.wind
+            );
+
+        const feels =
+            toCelsius(
+                hour.feels ||
+                hour.temp
+            );
+
+        const uv =
+            number(
+                hour.uv
+            );
+
+        const humidity =
+            number(
+                hour.humidity
+            );
+
+        if (
+            isStorm(hour)
+        ) {
+            factors.push({
+                type: "storm",
+                severity: "critical",
+                score: 50,
+                message:
+                    "thunderstorm risk is present"
+            });
+        }
+
+        if (
+            rain >= 80 ||
+            isHeavyRain(hour)
+        ) {
+            factors.push({
+                type: "rain",
+                severity: "high",
+                score:
+                    rainScore(hour),
+                message:
+                    `${round(rain)}% rain risk`
+            });
+        } else if (
+            rain >= 40
+        ) {
+            factors.push({
+                type: "rain",
+                severity: "moderate",
+                score:
+                    rainScore(hour),
+                message:
+                    `${round(rain)}% rain risk`
+            });
+        }
+
+        if (
+            precipitation >= 2
+        ) {
+            factors.push({
+                type: "precipitation",
+                severity: "high",
+                score:
+                    precipitationScore(hour),
+                message:
+                    `${precipitation.toFixed(1)} mm precipitation expected`
+            });
+        }
+
+        if (
+            wind >= 30
+        ) {
+            factors.push({
+                type: "wind",
+                severity: "high",
+                score:
+                    windScore(hour),
+                message:
+                    `wind around ${round(wind)} km/h`
+            });
+        } else if (
+            wind >= 20
+        ) {
+            factors.push({
+                type: "wind",
+                severity: "moderate",
+                score:
+                    windScore(hour),
+                message:
+                    `moderate wind around ${round(wind)} km/h`
+            });
+        }
+
+        if (
+            feels >= 35
+        ) {
+            factors.push({
+                type: "heat",
+                severity: "high",
+                score:
+                    heatScore(hour),
+                message:
+                    `feels like ${formatTemp(feels)}`
+            });
+        } else if (
+            feels >= 30
+        ) {
+            factors.push({
+                type: "heat",
+                severity: "moderate",
+                score:
+                    heatScore(hour),
+                message:
+                    `warm conditions around ${formatTemp(feels)}`
+            });
+        }
+
+        if (
+            feels <= 10
+        ) {
+            factors.push({
+                type: "cold",
+                severity: "moderate",
+                score:
+                    coldScore(hour),
+                message:
+                    `feels like ${formatTemp(feels)}`
+            });
+        }
+
+        if (
+            uv >= 8
+        ) {
+            factors.push({
+                type: "uv",
+                severity: "high",
+                score:
+                    uvScore(hour),
+                message:
+                    `UV around ${round(uv)}`
+            });
+        } else if (
+            uv >= 6
+        ) {
+            factors.push({
+                type: "uv",
+                severity: "moderate",
+                score:
+                    uvScore(hour),
+                message:
+                    `UV around ${round(uv)}`
+            });
+        }
+
+        if (
+            humidity >= 90
+        ) {
+            factors.push({
+                type: "humidity",
+                severity: "high",
+                score:
+                    humidityScore(hour),
+                message:
+                    `humidity around ${round(humidity)}%`
+            });
+        } else if (
+            humidity >= 80
+        ) {
+            factors.push({
+                type: "humidity",
+                severity: "moderate",
+                score:
+                    humidityScore(hour),
+                message:
+                    `humidity around ${round(humidity)}%`
+            });
+        }
+
+        return factors;
+    }
+
+    function classifyRisk(
+        score,
+        hour = null
+    ) {
+        if (
+            isStorm(hour)
+        ) {
+            return {
+                level: "unfavorable",
+                label: "avoid",
+                score
+            };
+        }
+
+        if (
+            score >= 80
+        ) {
+            return {
+                level: "favorable",
+                label: "good",
+                score
+            };
+        }
+
+        if (
+            score >= 65
+        ) {
+            return {
+                level: "favorable",
+                label: "generally good",
+                score
+            };
+        }
+
+        if (
+            score >= 50
+        ) {
+            return {
+                level: "caution",
+                label: "mixed",
+                score
+            };
+        }
+
+        if (
+            score >= 35
+        ) {
+            return {
+                level: "unfavorable",
+                label: "not ideal",
+                score
+            };
+        }
+
+        return {
+            level: "unfavorable",
+            label: "avoid",
+            score
+        };
+    }
+
+    /* ========================================================
        GENERAL COMFORT
        ======================================================== */
 
@@ -474,7 +1222,9 @@
         let score =
             100 - penalties;
 
-        if (isStorm(hour)) {
+        if (
+            isStorm(hour)
+        ) {
             score -= 40;
         }
 
@@ -498,21 +1248,33 @@
                 hour.rainChance
             );
 
-        if (rain >= 90) {
+        if (
+            rain >= 90
+        ) {
             score -= 45;
-        } else if (rain >= 80) {
+        } else if (
+            rain >= 80
+        ) {
             score -= 35;
-        } else if (rain >= 70) {
+        } else if (
+            rain >= 70
+        ) {
             score -= 28;
-        } else if (rain >= 60) {
+        } else if (
+            rain >= 60
+        ) {
             score -= 20;
         }
 
-        if (isHeavyRain(hour)) {
+        if (
+            isHeavyRain(hour)
+        ) {
             score -= 20;
         }
 
-        if (isStorm(hour)) {
+        if (
+            isStorm(hour)
+        ) {
             score -= 50;
         }
 
@@ -527,17 +1289,25 @@
        BEST / WORST HOURS
        ======================================================== */
 
-    function findBestHour(hours) {
-        if (!hours.length) {
+    function findBestHour(
+        hours
+    ) {
+        if (
+            !hours.length
+        ) {
             return null;
         }
 
         return [...hours]
-            .map(hour => ({
-                ...hour,
-                score:
-                    outdoorScore(hour)
-            }))
+            .map(
+                hour => ({
+                    ...hour,
+                    score:
+                        outdoorScore(
+                            hour
+                        )
+                })
+            )
             .sort(
                 (a, b) =>
                     b.score -
@@ -545,17 +1315,25 @@
             )[0];
     }
 
-    function findWorstHour(hours) {
-        if (!hours.length) {
+    function findWorstHour(
+        hours
+    ) {
+        if (
+            !hours.length
+        ) {
             return null;
         }
 
         return [...hours]
-            .map(hour => ({
-                ...hour,
-                score:
-                    outdoorScore(hour)
-            }))
+            .map(
+                hour => ({
+                    ...hour,
+                    score:
+                        outdoorScore(
+                            hour
+                        )
+                })
+            )
             .sort(
                 (a, b) =>
                     a.score -
@@ -564,11 +1342,120 @@
     }
 
     /* ========================================================
-       RAIN ANALYSIS 4.1
+       TIME-SPECIFIC FORECAST SELECTION
        ======================================================== */
 
-    function findRainWindow(hours) {
-        if (!hours.length) {
+    function findHourByClock(
+        hours,
+        clock
+    ) {
+        if (
+            !hours.length ||
+            !clock
+        ) {
+            return null;
+        }
+
+        return [...hours]
+            .map(
+                hour => {
+                    const date =
+                        new Date(
+                            hour.time
+                        );
+
+                    if (
+                        Number.isNaN(
+                            date.getTime()
+                        )
+                    ) {
+                        return {
+                            hour,
+                            difference:
+                                Infinity
+                        };
+                    }
+
+                    const hourMinutes =
+                        date.getHours() *
+                            60 +
+                        date.getMinutes();
+
+                    const targetMinutes =
+                        clock.hour *
+                            60 +
+                        clock.minute;
+
+                    return {
+                        hour,
+                        difference:
+                            Math.abs(
+                                hourMinutes -
+                                targetMinutes
+                            )
+                    };
+                }
+            )
+            .sort(
+                (a, b) =>
+                    a.difference -
+                    b.difference
+            )[0]?.hour || null;
+    }
+
+    function findHoursByPeriod(
+        hours,
+        period
+    ) {
+        if (
+            !period
+        ) {
+            return hours;
+        }
+
+        const filtered =
+            hours.filter(
+                hour =>
+                    hourMatchesPeriod(
+                        hour,
+                        period
+                    )
+            );
+
+        return filtered.length
+            ? filtered
+            : hours;
+    }
+
+    function getRequestedTimeContext(
+        question
+    ) {
+        const clock =
+            parseClockTime(
+                question
+            );
+
+        const period =
+            detectTimeOfDay(
+                question
+            );
+
+        return {
+            clock,
+            period
+        };
+    }
+
+    /* ========================================================
+       RAIN ANALYSIS
+       ======================================================== */
+
+    function findRainWindow(
+        hours
+    ) {
+        if (
+            !hours.length
+        ) {
             return null;
         }
 
@@ -584,7 +1471,9 @@
                     isRainy(hour)
             );
 
-        if (!rainy.length) {
+        if (
+            !rainy.length
+        ) {
             return {
                 exists: false,
                 hours: []
@@ -601,7 +1490,8 @@
                         ) +
                         number(
                             a.precipitation
-                        ) * 10;
+                        ) *
+                            10;
 
                     const bScore =
                         number(
@@ -609,7 +1499,8 @@
                         ) +
                         number(
                             b.precipitation
-                        ) * 10;
+                        ) *
+                            10;
 
                     return (
                         bScore -
@@ -626,7 +1517,7 @@
     }
 
     /* ========================================================
-       CLOUDORA AI 4.2 — MULTI-HOUR WINDOW SCORING
+       MULTI-HOUR WINDOW SCORING
        ======================================================== */
 
     function scoreWeatherWindow(
@@ -738,11 +1629,6 @@
                     ...scores
                 );
 
-            /*
-             * 4.2 rewards stability.
-             * A single excellent hour surrounded by
-             * bad conditions should not win a window.
-             */
             let stabilityPenalty = 0;
 
             if (
@@ -770,7 +1656,7 @@
             const windowScore =
                 clamp(
                     averageScore -
-                    stabilityPenalty,
+                        stabilityPenalty,
                     0,
                     100
                 );
@@ -821,15 +1707,15 @@
                 windowSize
             );
 
-        if (!windows.length) {
-            return null;
-        }
-
-        return windows[0];
+        return (
+            windows.length
+                ? windows[0]
+                : null
+        );
     }
 
     /* ========================================================
-       RAIN TRANSITION ANALYSIS 4.2
+       RAIN TRANSITIONS
        ======================================================== */
 
     function analyzeRainTransitions(
@@ -861,7 +1747,9 @@
                     isRainy(hour)
             );
 
-        if (!rainyHours.length) {
+        if (
+            !rainyHours.length
+        ) {
             return {
                 exists: false,
                 start: null,
@@ -882,7 +1770,8 @@
                         ) +
                         number(
                             a.precipitation
-                        ) * 10;
+                        ) *
+                            10;
 
                     const bScore =
                         number(
@@ -890,7 +1779,8 @@
                         ) +
                         number(
                             b.precipitation
-                        ) * 10;
+                        ) *
+                            10;
 
                     return (
                         bScore -
@@ -912,8 +1802,9 @@
         let easing = null;
         let end = null;
 
-        if (peakIndex >= 0) {
-
+        if (
+            peakIndex >= 0
+        ) {
             for (
                 let i =
                     peakIndex + 1;
@@ -930,9 +1821,9 @@
                     number(
                         current.rainChance
                     ) <
-                    number(
-                        previous.rainChance
-                    ) &&
+                        number(
+                            previous.rainChance
+                        ) &&
                     !easing
                 ) {
                     easing =
@@ -967,13 +1858,15 @@
     }
 
     /* ========================================================
-       RECOMMENDATION CONFIDENCE 4.2
+       CONFIDENCE
        ======================================================== */
 
     function calculateRecommendationConfidence(
         window
     ) {
-        if (!window) {
+        if (
+            !window
+        ) {
             return {
                 level: "low",
                 score: 0
@@ -1201,6 +2094,22 @@
         }
 
         if (
+            /sport|football|soccer|cricket|badminton|tennis/.test(
+                text
+            )
+        ) {
+            return {
+                name: "outdoor sports",
+                rainLimit: 30,
+                windLimit: 28,
+                heatLimit: 32,
+                uvLimit: 7,
+                humidityLimit: 82,
+                minScore: 65
+            };
+        }
+
+        if (
             /drive|driving|commute|travel/.test(
                 text
             )
@@ -1227,6 +2136,66 @@
         };
     }
 
+    function extractActivity(
+        question
+    ) {
+        const text =
+            normalize(question);
+
+        if (
+            /run|running|jog/.test(
+                text
+            )
+        ) {
+            return "running";
+        }
+
+        if (
+            /cycle|cycling|bike|biking/.test(
+                text
+            )
+        ) {
+            return "cycling";
+        }
+
+        if (
+            /walk|walking|stroll/.test(
+                text
+            )
+        ) {
+            return "walking";
+        }
+
+        if (
+            /picnic|park/.test(
+                text
+            )
+        ) {
+            return "picnic";
+        }
+
+        if (
+            /sport|football|soccer|cricket|badminton|tennis/.test(
+                text
+            )
+        ) {
+            return "outdoor sports";
+        }
+
+        if (
+            /drive|driving|commute|travel/.test(
+                text
+            )
+        ) {
+            return "travel";
+        }
+
+        return (
+            conversationContext.lastActivity ||
+            "outdoor activity"
+        );
+    }
+
     /* ========================================================
        ACTIVITY REASONING
        ======================================================== */
@@ -1235,7 +2204,9 @@
         hours,
         activity
     ) {
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return null;
         }
 
@@ -1404,28 +2375,25 @@
             scored.filter(
                 hour =>
                     hour.score >=
-                    profile.minScore &&
+                        profile.minScore &&
                     number(
                         hour.rainChance
                     ) <=
-                    profile.rainLimit &&
+                        profile.rainLimit &&
                     number(
                         hour.wind
                     ) <=
-                    profile.windLimit &&
+                        profile.windLimit &&
                     !isStorm(hour)
             );
 
         return {
             profile,
-
             best,
-
             acceptableBest:
                 acceptable.length
                     ? acceptable[0]
                     : null,
-
             worst:
                 scored[
                     scored.length - 1
@@ -1437,7 +2405,10 @@
         hour,
         profile
     ) {
-        if (!hour || !profile) {
+        if (
+            !hour ||
+            !profile
+        ) {
             return "";
         }
 
@@ -1495,7 +2466,8 @@
 
         if (
             feels >= 18 &&
-            feels <= profile.heatLimit
+            feels <=
+                profile.heatLimit
         ) {
             reasons.push(
                 "a reasonable temperature"
@@ -1520,7 +2492,9 @@
             );
         }
 
-        if (!reasons.length) {
+        if (
+            !reasons.length
+        ) {
             return "";
         }
 
@@ -1530,14 +2504,16 @@
     }
 
     /* ========================================================
-       TEMPERATURE SUMMARY
+       TEMPERATURE
        ======================================================== */
 
     function temperatureSummary(
         hour
     ) {
         if (!hour) {
-            return "I don't have enough temperature data yet.";
+            return (
+                "I don't have enough temperature data yet."
+            );
         }
 
         const temp =
@@ -1546,31 +2522,57 @@
                 hour.temp
             );
 
-        if (temp >= 38) {
-            return "It will feel very hot, so heat exposure is the main concern.";
+        if (
+            temp >= 38
+        ) {
+            return (
+                "It will feel very hot, so heat exposure is the main concern."
+            );
         }
 
-        if (temp >= 34) {
-            return "It will feel hot, especially under direct sunlight.";
+        if (
+            temp >= 34
+        ) {
+            return (
+                "It will feel hot, especially under direct sunlight."
+            );
         }
 
-        if (temp >= 30) {
-            return "It will feel warm, with heat becoming more noticeable outdoors.";
+        if (
+            temp >= 30
+        ) {
+            return (
+                "It will feel warm, with heat becoming more noticeable outdoors."
+            );
         }
 
-        if (temp >= 24) {
-            return "The temperature is generally comfortable for many activities.";
+        if (
+            temp >= 24
+        ) {
+            return (
+                "The temperature is generally comfortable for many activities."
+            );
         }
 
-        if (temp >= 18) {
-            return "The temperature should feel mild and fairly comfortable.";
+        if (
+            temp >= 18
+        ) {
+            return (
+                "The temperature should feel mild and fairly comfortable."
+            );
         }
 
-        if (temp >= 10) {
-            return "It will feel cool, especially during longer outdoor periods.";
+        if (
+            temp >= 10
+        ) {
+            return (
+                "It will feel cool, especially during longer outdoor periods."
+            );
         }
 
-        return "It will feel cold, so warmer clothing is advisable.";
+        return (
+            "It will feel cold, so warmer clothing is advisable."
+        );
     }
 
     /* ========================================================
@@ -1581,7 +2583,9 @@
         hour
     ) {
         if (!hour) {
-            return "I don't have enough weather data for a clothing recommendation.";
+            return (
+                "I don't have enough weather data for a clothing recommendation."
+            );
         }
 
         const temp =
@@ -1612,23 +2616,33 @@
 
         const advice = [];
 
-        if (temp >= 36) {
+        if (
+            temp >= 36
+        ) {
             advice.push(
                 "very light, breathable clothing"
             );
-        } else if (temp >= 30) {
+        } else if (
+            temp >= 30
+        ) {
             advice.push(
                 "light, breathable clothing"
             );
-        } else if (temp >= 25) {
+        } else if (
+            temp >= 25
+        ) {
             advice.push(
                 "a light outfit"
             );
-        } else if (temp >= 18) {
+        } else if (
+            temp >= 18
+        ) {
             advice.push(
                 "a light extra layer"
             );
-        } else if (temp >= 10) {
+        } else if (
+            temp >= 10
+        ) {
             advice.push(
                 "a warmer layer"
             );
@@ -1638,25 +2652,33 @@
             );
         }
 
-        if (rain >= 50) {
+        if (
+            rain >= 50
+        ) {
             advice.push(
                 "rain protection"
             );
         }
 
-        if (wind >= 30) {
+        if (
+            wind >= 30
+        ) {
             advice.push(
                 "a wind-resistant outer layer"
             );
         }
 
-        if (uv >= 7) {
+        if (
+            uv >= 7
+        ) {
             advice.push(
                 "sun protection"
             );
         }
 
-        if (humidity >= 90) {
+        if (
+            humidity >= 90
+        ) {
             advice.push(
                 "lightweight fabric because humidity is high"
             );
@@ -1668,14 +2690,16 @@
     }
 
     /* ========================================================
-       EXPLANATION
+       EXPLANATION ENGINE
        ======================================================== */
 
     function explainHour(
         hour
     ) {
         if (!hour) {
-            return "I don't have enough forecast data to explain that recommendation.";
+            return (
+                "I don't have enough forecast data to explain that recommendation."
+            );
         }
 
         const reasons = [];
@@ -1711,7 +2735,9 @@
                 hour.humidity
             );
 
-        if (rain >= 50) {
+        if (
+            rain >= 50
+        ) {
             reasons.push(
                 `${round(rain)}% rain chance`
             );
@@ -1725,31 +2751,49 @@
             );
         }
 
-        if (wind >= 25) {
+        if (
+            wind >= 25
+        ) {
             reasons.push(
                 `wind around ${round(wind)} km/h`
             );
         }
 
-        if (feels >= 32) {
+        if (
+            feels >= 32
+        ) {
             reasons.push(
                 `feels like ${formatTemp(feels)}`
             );
         }
 
-        if (uv >= 7) {
+        if (
+            uv >= 7
+        ) {
             reasons.push(
                 `UV around ${round(uv)}`
             );
         }
 
-        if (humidity >= 80) {
+        if (
+            humidity >= 80
+        ) {
             reasons.push(
                 `humidity around ${round(humidity)}%`
             );
         }
 
-        if (!reasons.length) {
+        if (
+            isStorm(hour)
+        ) {
+            reasons.push(
+                "thunderstorm risk"
+            );
+        }
+
+        if (
+            !reasons.length
+        ) {
             return (
                 "The forecast looks relatively balanced, without a major weather factor working against it."
             );
@@ -1760,6 +2804,52 @@
         );
     }
 
+    function explainDecision(
+        hour
+    ) {
+        if (!hour) {
+            return "";
+        }
+
+        const score =
+            outdoorScore(
+                hour
+            );
+
+        const risk =
+            classifyRisk(
+                score,
+                hour
+            );
+
+        const factors =
+            getWeatherFactors(
+                hour
+            );
+
+        if (
+            !factors.length
+        ) {
+            return (
+                `Overall outdoor conditions look **${risk.label}**, with a score around **${round(score)}/100**.`
+            );
+        }
+
+        const factorText =
+            factors
+                .slice(0, 3)
+                .map(
+                    factor =>
+                        factor.message
+                )
+                .join(", ");
+
+        return (
+            `Overall conditions look **${risk.label}** at around **${round(score)}/100**. ` +
+            `The main factors are ${factorText}.`
+        );
+    }
+
     /* ========================================================
        DAY SUMMARY
        ======================================================== */
@@ -1767,7 +2857,9 @@
     function summarizeDay(
         hours
     ) {
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return null;
         }
 
@@ -1794,18 +2886,27 @@
             hours.reduce(
                 (sum, h) =>
                     sum +
-                    number(h.wind),
+                    number(
+                        h.wind
+                    ),
                 0
             ) /
             hours.length;
 
         const best =
-            findBestHour(hours);
+            findBestHour(
+                hours
+            );
 
         const window =
             findBestWeatherWindow(
                 hours,
                 2
+            );
+
+        const rainAnalysis =
+            analyzeRainTransitions(
+                hours
             );
 
         return {
@@ -1827,12 +2928,14 @@
             best,
 
             bestWindow:
-                window
+                window,
+
+            rainAnalysis
         };
     }
 
     /* ========================================================
-       NATURAL LANGUAGE INTENT
+       INTENT DETECTION 4.3
        ======================================================== */
 
     function detectIntent(
@@ -1841,15 +2944,98 @@
         const text =
             normalize(question);
 
+        /*
+         * Explicit follow-up reasoning.
+         */
         if (
-            /why/.test(text)
+            /^(why|why not|how come|what do you mean)$/.test(
+                text
+            )
+        ) {
+            return "why";
+        }
+
+        /*
+         * Comparison should be detected before
+         * individual today/tomorrow intents.
+         */
+        if (
+            /today.*tomorrow|tomorrow.*today|compare|comparison|which.*better/.test(
+                text
+            )
+        ) {
+            return "comparison";
+        }
+
+        if (
+            /air quality|air pollution|pollution|aqi/.test(
+                text
+            )
+        ) {
+            return "air-quality";
+        }
+
+        if (
+            /clothing|outfit|wear|jacket|umbrella/.test(
+                text
+            )
+        ) {
+            /*
+             * Umbrella questions are more useful as
+             * rain questions unless actual clothing
+             * is being discussed.
+             */
+            if (
+                /umbrella/.test(
+                    text
+                ) &&
+                !/wear|outfit|clothing|jacket/.test(
+                    text
+                )
+            ) {
+                return "rain";
+            }
+
+            return "clothing";
+        }
+
+        /*
+         * Exact-time requests should be detected
+         * before generic activity intent.
+         */
+        const hasClock =
+            !!parseClockTime(
+                text
+            );
+
+        const hasPeriod =
+            !!detectTimeOfDay(
+                text
+            );
+
+        if (
+            hasClock ||
+            hasPeriod
+        ) {
+            if (
+                /rain|raining|weather|outside|outdoor|walk|walking|run|running|jog|cycle|cycling|bike|travel|drive|sport|picnic|good|safe|okay|ok|should i|can i/.test(
+                    text
+                )
+            ) {
+                return "time-specific";
+            }
+        }
+
+        if (
+            /why/.test(
+                text
+            )
         ) {
             return "why";
         }
 
         if (
-            /tomorrow/.test(text) &&
-            !/today.*tomorrow|tomorrow.*today|compare/.test(
+            /tomorrow/.test(
                 text
             )
         ) {
@@ -1865,15 +3051,7 @@
         }
 
         if (
-            /air quality|air pollution|pollution|aqi/.test(
-                text
-            )
-        ) {
-            return "air-quality";
-        }
-
-        if (
-            /best time|good time|ideal time|when should i|when is the best/.test(
+            /best time|good time|ideal time|when should i|when is the best|best window/.test(
                 text
             )
         ) {
@@ -1889,7 +3067,7 @@
         }
 
         if (
-            /rain.*when|when.*rain|rain timing|rain likely|when will.*rain|rain stop|rain end/.test(
+            /rain.*when|when.*rain|rain timing|rain likely|when will.*rain|rain stop|rain end|when does.*rain/.test(
                 text
             )
         ) {
@@ -1897,15 +3075,7 @@
         }
 
         if (
-            /wear|clothing|outfit|jacket/.test(
-                text
-            )
-        ) {
-            return "clothing";
-        }
-
-        if (
-            /run|running|jog|cycle|cycling|bike|walk|walking|picnic|travel|drive|commute/.test(
+            /run|running|jog|cycle|cycling|bike|walking|walk|stroll|picnic|travel|drive|commute|sport|football|soccer|cricket|badminton|tennis/.test(
                 text
             )
         ) {
@@ -1913,15 +3083,7 @@
         }
 
         if (
-            /tomorrow.*today|today.*tomorrow|compare/.test(
-                text
-            )
-        ) {
-            return "comparison";
-        }
-
-        if (
-            /temperature|temp|hot|cold|heat/.test(
+            /temperature|temp|hot|cold|heat|feels like/.test(
                 text
             )
         ) {
@@ -1945,7 +3107,7 @@
         }
 
         if (
-            /uv|sun/.test(
+            /\buv\b|sun/.test(
                 text
             )
         ) {
@@ -1953,7 +3115,7 @@
         }
 
         if (
-            /rain|raining|umbrella/.test(
+            /rain|raining/.test(
                 text
             )
         ) {
@@ -1961,7 +3123,7 @@
         }
 
         if (
-            /outside|outdoor/.test(
+            /outside|outdoor|go out|should i go|can i go/.test(
                 text
             )
         ) {
@@ -1972,21 +3134,108 @@
     }
 
     /* ========================================================
-       ANSWER: BEST TIME 4.2
+       CONVERSATION CONTEXT
        ======================================================== */
 
-    function answerBestTime() {
+    function updateConversationContext(
+        question,
+        intent,
+        options = {}
+    ) {
+        conversationContext.lastQuestion =
+            String(
+                question || ""
+            );
+
+        conversationContext.lastIntent =
+            intent || "";
+
+        if (
+            options.activity
+        ) {
+            conversationContext.lastActivity =
+                options.activity;
+        }
+
+        if (
+            options.clock
+        ) {
+            conversationContext.lastTime =
+                options.clock;
+
+            conversationContext.lastTimeLabel =
+                options.clock.label ||
+                "";
+        }
+
+        if (
+            options.answerType
+        ) {
+            conversationContext.lastAnswerType =
+                options.answerType;
+        }
+
+        if (
+            options.decisionType
+        ) {
+            conversationContext.lastDecisionType =
+                options.decisionType;
+        }
+    }
+
+    function isContextOnlyFollowUp(
+        question
+    ) {
+        const text =
+            normalize(question);
+
+        return (
+            /^(why|why not|what about|and at|how about|what if|then what|is that|would that|okay but|ok but)/.test(
+                text
+            )
+        );
+    }
+
+    /* ========================================================
+       ANSWER: BEST TIME
+       ======================================================== */
+
+    function answerBestTime(
+        question = ""
+    ) {
         const hours =
             getHourlyData();
 
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return (
                 "I'm still waiting for enough hourly forecast data to determine the best time."
             );
         }
 
+        const requested =
+            getRequestedTimeContext(
+                question
+            );
+
+        let searchHours =
+            hours;
+
+        if (
+            requested.period
+        ) {
+            searchHours =
+                findHoursByPeriod(
+                    hours,
+                    requested.period
+                );
+        }
+
         const best =
-            findBestHour(hours);
+            findBestHour(
+                searchHours
+            );
 
         if (!best) {
             return (
@@ -1994,51 +3243,104 @@
             );
         }
 
+        const score =
+            outdoorScore(
+                best
+            );
+
+        const risk =
+            classifyRisk(
+                score,
+                best
+            );
+
         lastDecision = {
             type: "best-time",
-            hour: best
+            hour: best,
+            score,
+            risk,
+            reasons:
+                getWeatherFactors(
+                    best
+                )
         };
 
+        updateConversationContext(
+            question,
+            "best-time",
+            {
+                answerType:
+                    "best-time",
+                decisionType:
+                    "best-time"
+            }
+        );
+
         if (
-            best.score < 45 ||
+            score < 45 ||
             best.rainChance >= 70 ||
             isHeavyRain(best) ||
             isStorm(best)
         ) {
             return (
-                `There isn't a genuinely good outdoor window in the next several hours. ` +
-                `The least-unfavorable period is around **${formatTime(best.time)}**, ` +
-                `but it still has a **${round(best.rainChance)}%** rain chance ` +
-                `and feels like **${formatTemp(best.feels || best.temp)}**. ` +
-                `I'd keep outdoor plans flexible and use rain protection.`
+                `There isn't a genuinely good outdoor window in the selected period. ` +
+                `The least-unfavorable time is around **${formatTime(best.time)}**, ` +
+                `but it still has a **${round(best.rainChance)}%** rain chance. ` +
+                `${explainDecision(best)}`
             );
         }
 
         return (
-            `The best outdoor window looks like **${formatTime(best.time)}**. ` +
+            `The best outdoor period looks like **${formatTime(best.time)}**. ` +
             `It should feel around **${formatTemp(best.feels || best.temp)}**, ` +
             `with a **${round(best.rainChance)}%** rain chance and ` +
             `wind around **${round(best.wind)} km/h**. ` +
-            `${explainHour(best)}`
+            `${explainDecision(best)}`
         );
     }
 
-    function answerBestTime42() {
+    function answerBestTime43(
+        question = ""
+    ) {
         const hours =
             getHourlyData();
 
-        if (!hours.length) {
-            return answerBestTime();
+        if (
+            !hours.length
+        ) {
+            return answerBestTime(
+                question
+            );
+        }
+
+        const requested =
+            getRequestedTimeContext(
+                question
+            );
+
+        let searchHours =
+            hours;
+
+        if (
+            requested.period
+        ) {
+            searchHours =
+                findHoursByPeriod(
+                    hours,
+                    requested.period
+                );
         }
 
         const window =
             findBestWeatherWindow(
-                hours,
+                searchHours,
                 2
             );
 
         if (!window) {
-            return answerBestTime();
+            return answerBestTime(
+                question
+            );
         }
 
         const confidence =
@@ -2047,29 +3349,358 @@
             );
 
         lastDecision = {
-            type: "best-time-4.2",
-            hour: window.start,
+            type:
+                "best-time-4.3",
+            hour:
+                window.start,
             window,
-            confidence
+            confidence,
+            risk:
+                classifyRisk(
+                    window.score,
+                    window.start
+                ),
+            reasons:
+                getWeatherFactors(
+                    window.start
+                )
         };
+
+        updateConversationContext(
+            question,
+            "best-time",
+            {
+                answerType:
+                    "best-time-window",
+                decisionType:
+                    "best-time-4.3"
+            }
+        );
 
         if (
             window.score < 45 ||
             window.worstRain >= 70
         ) {
             return (
-                `I don't see a genuinely good outdoor window in the available forecast. ` +
-                `The least-unfavorable period is around **${formatWeatherWindow(window)}**, ` +
-                `but rain risk is still significant. ` +
+                `I don't see a genuinely good outdoor window in the selected period. ` +
+                `The least-unfavorable period is around **${formatWeatherWindow(window)}**. ` +
                 `${explainWeatherWindow(window)}`
             );
         }
 
         return (
             `The best **2-hour outdoor window** looks like **${formatWeatherWindow(window)}**. ` +
-            `Conditions average around **${round(window.averageScore)}/100** for outdoor comfort, ` +
+            `Conditions average around **${round(window.averageScore)}/100**, ` +
             `with rain risk averaging **${round(window.averageRain)}%**. ` +
             `${explainWeatherWindow(window)}`
+        );
+    }
+
+    /* ========================================================
+       ANSWER: EXACT TIME
+       ======================================================== */
+
+    function answerTimeSpecific(
+        question
+    ) {
+        const hours =
+            getHourlyData();
+
+        if (
+            !hours.length
+        ) {
+            return (
+                "I need the hourly forecast before I can check that specific time."
+            );
+        }
+
+        const requested =
+            getRequestedTimeContext(
+                question
+            );
+
+        let target = null;
+
+        if (
+            requested.clock
+        ) {
+            target =
+                findHourByClock(
+                    hours,
+                    requested.clock
+                );
+        } else if (
+            requested.period
+        ) {
+            const periodHours =
+                findHoursByPeriod(
+                    hours,
+                    requested.period
+                );
+
+            target =
+                findBestHour(
+                    periodHours
+                );
+        }
+
+        if (!target) {
+            return (
+                "I couldn't match that time to the available hourly forecast."
+            );
+        }
+
+        const activity =
+            extractActivity(
+                question
+            );
+
+        const hasActivity =
+            /run|running|jog|walk|walking|cycle|cycling|bike|picnic|travel|drive|sport|football|soccer|cricket|badminton|tennis/.test(
+                normalize(question)
+            ) ||
+            conversationContext.lastActivity;
+
+        if (
+            hasActivity
+        ) {
+            const analysis =
+                analyzeActivity(
+                    hours,
+                    activity
+                );
+
+            const activityHour =
+                analysis
+                    ? findHourByClock(
+                        hours,
+                        requested.clock
+                    ) || target
+                    : target;
+
+            const profile =
+                analysis?.profile ||
+                activityProfile(
+                    activity
+                );
+
+            let activityScore =
+                100;
+
+            const rain =
+                number(
+                    activityHour.rainChance
+                );
+
+            const wind =
+                number(
+                    activityHour.wind
+                );
+
+            const feels =
+                toCelsius(
+                    activityHour.feels ||
+                    activityHour.temp
+                );
+
+            const humidity =
+                number(
+                    activityHour.humidity
+                );
+
+            const uv =
+                number(
+                    activityHour.uv
+                );
+
+            if (
+                rain >= 90
+            ) {
+                activityScore -= 70;
+            } else if (
+                rain >= 80
+            ) {
+                activityScore -= 60;
+            } else if (
+                rain >= 70
+            ) {
+                activityScore -= 45;
+            } else if (
+                rain >
+                profile.rainLimit
+            ) {
+                activityScore -= 35;
+            } else if (
+                rain >= 20
+            ) {
+                activityScore -= 10;
+            }
+
+            if (
+                number(
+                    activityHour.precipitation
+                ) >= 2
+            ) {
+                activityScore -= 25;
+            }
+
+            if (
+                wind >
+                profile.windLimit
+            ) {
+                activityScore -= 25;
+            }
+
+            if (
+                feels >
+                profile.heatLimit
+            ) {
+                activityScore -= 20;
+            }
+
+            if (
+                feels <= 8
+            ) {
+                activityScore -= 20;
+            }
+
+            if (
+                uv >
+                profile.uvLimit
+            ) {
+                activityScore -= 15;
+            }
+
+            if (
+                humidity >
+                profile.humidityLimit
+            ) {
+                activityScore -= 18;
+            }
+
+            if (
+                isStorm(
+                    activityHour
+                )
+            ) {
+                activityScore -= 50;
+            }
+
+            activityScore =
+                clamp(
+                    activityScore,
+                    0,
+                    100
+                );
+
+            const suitable =
+                activityScore >=
+                    profile.minScore &&
+                rain <=
+                    profile.rainLimit &&
+                wind <=
+                    profile.windLimit &&
+                !isStorm(
+                    activityHour
+                );
+
+            lastDecision = {
+                type:
+                    "time-specific-activity",
+                hour:
+                    activityHour,
+                activity,
+                score:
+                    activityScore,
+                suitable,
+                reasons:
+                    getWeatherFactors(
+                        activityHour
+                    )
+            };
+
+            updateConversationContext(
+                question,
+                "time-specific",
+                {
+                    activity,
+                    clock:
+                        requested.clock,
+                    answerType:
+                        "time-specific-activity",
+                    decisionType:
+                        "time-specific-activity"
+                }
+            );
+
+            const timeLabel =
+                formatTime(
+                    activityHour.time
+                );
+
+            if (
+                suitable
+            ) {
+                return (
+                    `Yes — **${timeLabel}** looks reasonably suitable for **${profile.name}**. ` +
+                    `It feels like **${formatTemp(activityHour.feels || activityHour.temp)}**, ` +
+                    `rain chance is **${round(activityHour.rainChance)}%**, ` +
+                    `and wind is around **${round(activityHour.wind)} km/h**. ` +
+                    `${explainActivityHour(activityHour, profile)}`
+                );
+            }
+
+            return (
+                `I'd be cautious about **${profile.name}** at **${timeLabel}**. ` +
+                `It feels like **${formatTemp(activityHour.feels || activityHour.temp)}**, ` +
+                `with a **${round(activityHour.rainChance)}%** rain chance and ` +
+                `wind around **${round(activityHour.wind)} km/h**. ` +
+                `${explainDecision(activityHour)}`
+            );
+        }
+
+        const score =
+            outdoorScore(
+                target
+            );
+
+        const risk =
+            classifyRisk(
+                score,
+                target
+            );
+
+        lastDecision = {
+            type:
+                "time-specific",
+            hour:
+                target,
+            score,
+            risk,
+            reasons:
+                getWeatherFactors(
+                    target
+                )
+        };
+
+        updateConversationContext(
+            question,
+            "time-specific",
+            {
+                clock:
+                    requested.clock,
+                answerType:
+                    "time-specific",
+                decisionType:
+                    "time-specific"
+            }
+        );
+
+        return (
+            `Around **${formatTime(target.time)}**, it should feel like **${formatTemp(target.feels || target.temp)}**, ` +
+            `with a **${round(target.rainChance)}%** rain chance and ` +
+            `wind around **${round(target.wind)} km/h**. ` +
+            `${explainDecision(target)}`
         );
     }
 
@@ -2081,14 +3712,18 @@
         const hours =
             getHourlyData();
 
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return (
                 "I don't have enough hourly data to identify the worst period."
             );
         }
 
         const worst =
-            findWorstHour(hours);
+            findWorstHour(
+                hours
+            );
 
         if (!worst) {
             return (
@@ -2098,56 +3733,42 @@
 
         lastDecision = {
             type: "worst-time",
-            hour: worst
+            hour: worst,
+            score:
+                outdoorScore(
+                    worst
+                ),
+            reasons:
+                getWeatherFactors(
+                    worst
+                )
         };
+
+        updateConversationContext(
+            "",
+            "worst-time",
+            {
+                answerType:
+                    "worst-time",
+                decisionType:
+                    "worst-time"
+            }
+        );
 
         return (
             `I'd be most cautious around **${formatTime(worst.time)}**. ` +
             `Conditions are around **${formatTemp(worst.feels || worst.temp)}**, ` +
             `with a **${round(worst.rainChance)}%** rain chance and ` +
-            `wind around **${round(worst.wind)} km/h**.`
+            `wind around **${round(worst.wind)} km/h**. ` +
+            `${explainDecision(worst)}`
         );
     }
 
     /* ========================================================
-       ANSWER: RAIN 4.2
+       ANSWER: RAIN
        ======================================================== */
 
     function answerRainTiming() {
-        const hours =
-            getHourlyData();
-
-        const rain =
-            findRainWindow(
-                hours
-            );
-
-        if (!rain?.exists) {
-            return (
-                "There isn't a strong rain signal in the available hourly forecast."
-            );
-        }
-
-        const strongest =
-            rain.strongest;
-
-        lastDecision = {
-            type: "rain",
-            hour: strongest
-        };
-
-        return (
-            `The strongest rain signal is around **${formatTime(strongest.time)}**, ` +
-            `with about a **${round(strongest.rainChance)}%** chance of rain. ` +
-            (
-                strongest.precipitation > 0
-                    ? `Expected precipitation is around **${strongest.precipitation.toFixed(1)} mm**.`
-                    : "The forecast does not currently show a large precipitation amount."
-            )
-        );
-    }
-
-    function answerRainTiming42() {
         const hours =
             getHourlyData();
 
@@ -2156,7 +3777,9 @@
                 hours
             );
 
-        if (!analysis.exists) {
+        if (
+            !analysis.exists
+        ) {
             return (
                 "I don't see a strong rain period in the available forecast."
             );
@@ -2166,11 +3789,28 @@
             analysis.peak;
 
         lastDecision = {
-            type: "rain-4.2",
-            hour: peak,
+            type:
+                "rain-4.3",
+            hour:
+                peak,
             rainAnalysis:
-                analysis
+                analysis,
+            reasons:
+                getWeatherFactors(
+                    peak
+                )
         };
+
+        updateConversationContext(
+            "",
+            "rain-timing",
+            {
+                answerType:
+                    "rain-timing",
+                decisionType:
+                    "rain-4.3"
+            }
+        );
 
         let response =
             `The strongest rain signal is around **${formatTime(peak.time)}**, ` +
@@ -2179,7 +3819,7 @@
         if (
             analysis.start &&
             analysis.start.index !==
-            peak.index
+                peak.index
         ) {
             response +=
                 ` Rain appears to build from around **${formatTime(analysis.start.time)}**.`;
@@ -2215,10 +3855,15 @@
         const hours =
             getHourlyData();
 
+        const activity =
+            extractActivity(
+                question
+            );
+
         const analysis =
             analyzeActivity(
                 hours,
-                question
+                activity
             );
 
         if (!analysis) {
@@ -2238,12 +3883,32 @@
                 analysis.best;
 
             lastDecision = {
-                type: "activity",
-                hour: fallback,
+                type:
+                    "activity",
+                hour:
+                    fallback,
                 activity:
                     profile.name,
-                unsuitable: true
+                unsuitable:
+                    true,
+                reasons:
+                    getWeatherFactors(
+                        fallback
+                    )
             };
+
+            updateConversationContext(
+                question,
+                "activity",
+                {
+                    activity:
+                        profile.name,
+                    answerType:
+                        "activity",
+                    decisionType:
+                        "activity"
+                }
+            );
 
             return (
                 `I wouldn't recommend **${profile.name}** outdoors during the available forecast window. ` +
@@ -2251,17 +3916,39 @@
                 `has a **${round(fallback.rainChance)}%** rain chance, ` +
                 `feels like **${formatTemp(fallback.feels || fallback.temp)}**, ` +
                 `and has wind around **${round(fallback.wind)} km/h**. ` +
-                `I'd wait for a drier window if possible.`
+                `${explainDecision(fallback)}`
             );
         }
 
         lastDecision = {
-            type: "activity",
-            hour: best,
+            type:
+                "activity",
+            hour:
+                best,
             activity:
                 profile.name,
-            unsuitable: false
+            unsuitable:
+                false,
+            score:
+                best.score,
+            reasons:
+                getWeatherFactors(
+                    best
+                )
         };
+
+        updateConversationContext(
+            question,
+            "activity",
+            {
+                activity:
+                    profile.name,
+                answerType:
+                    "activity",
+                decisionType:
+                    "activity"
+            }
+        );
 
         return (
             `For **${profile.name}**, I'd target around **${formatTime(best.time)}**. ` +
@@ -2280,14 +3967,18 @@
         const hours =
             getHourlyData();
 
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return (
                 "I need the current forecast before I can recommend what to wear."
             );
         }
 
         const best =
-            findBestHour(hours);
+            findBestHour(
+                hours
+            );
 
         if (!best) {
             return (
@@ -2295,33 +3986,41 @@
             );
         }
 
+        lastDecision = {
+            type:
+                "clothing",
+            hour:
+                best
+        };
+
         return (
             `${clothingAdvice(best)} ` +
-            `The forecast around **${formatTime(best.time)}** feels like **${formatTemp(best.feels || best.temp)}**. ` +
-            (
-                best.rainChance >= 60
-                    ? "Because rain risk is high, keep an umbrella or waterproof layer handy."
-                    : ""
-            )
+            `The forecast around **${formatTime(best.time)}** feels like **${formatTemp(best.feels || best.temp)}**.`
         );
     }
 
     /* ========================================================
-       ANSWER: TOMORROW 4.2
+       ANSWER: TOMORROW
        ======================================================== */
 
     function answerTomorrow() {
         const hours =
-            getFutureHours(1);
+            getFutureHours(
+                1
+            );
 
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return (
                 "I don't have enough forecast data for tomorrow yet."
             );
         }
 
         const summary =
-            summarizeDay(hours);
+            summarizeDay(
+                hours
+            );
 
         const best =
             summary.best;
@@ -2329,22 +4028,49 @@
         const window =
             summary.bestWindow;
 
+        lastDecision = {
+            type:
+                "tomorrow",
+            hour:
+                best,
+            window
+        };
+
+        updateConversationContext(
+            "",
+            "tomorrow",
+            {
+                answerType:
+                    "tomorrow",
+                decisionType:
+                    "tomorrow"
+            }
+        );
+
         let response =
             `Tomorrow looks like roughly **${formatTemp(summary.low)} to ${formatTemp(summary.high)}**. ` +
             `The highest rain chance is around **${round(summary.rainChance)}%**, ` +
             `with average wind near **${round(summary.avgWind)} km/h**. `;
 
-        if (window) {
+        if (
+            window
+        ) {
             response +=
                 `The best 2-hour outdoor window appears to be **${formatWeatherWindow(window)}**. `;
-        } else if (best) {
+        } else if (
+            best
+        ) {
             response +=
                 `The best available outdoor period appears to be around **${formatTime(best.time)}**. `;
         }
 
-        if (best) {
+        if (
+            best
+        ) {
             response +=
-                explainHour(best);
+                explainDecision(
+                    best
+                );
         }
 
         return response;
@@ -2358,7 +4084,9 @@
         const hours =
             getHourlyData();
 
-        if (hours.length < 2) {
+        if (
+            hours.length < 2
+        ) {
             return (
                 "I need more hourly forecast data to describe how the weather will change."
             );
@@ -2449,7 +4177,9 @@
             );
         }
 
-        if (!changes.length) {
+        if (
+            !changes.length
+        ) {
             return (
                 `The next few hours look fairly stable. ` +
                 `It stays around **${formatTemp(first.feels || first.temp)}**, ` +
@@ -2495,19 +4225,29 @@
         let meaning =
             "generally acceptable air quality";
 
-        if (aqi <= 50) {
+        if (
+            aqi <= 50
+        ) {
             meaning =
                 "good air quality for most people";
-        } else if (aqi <= 100) {
+        } else if (
+            aqi <= 100
+        ) {
             meaning =
                 "moderate air quality";
-        } else if (aqi <= 150) {
+        } else if (
+            aqi <= 150
+        ) {
             meaning =
                 "air quality that may be less suitable for sensitive people";
-        } else if (aqi <= 200) {
+        } else if (
+            aqi <= 200
+        ) {
             meaning =
                 "unhealthy air quality";
-        } else if (aqi <= 300) {
+        } else if (
+            aqi <= 300
+        ) {
             meaning =
                 "very unhealthy air quality";
         } else {
@@ -2528,12 +4268,16 @@
     function answerComparison() {
         const today =
             summarizeDay(
-                getFutureHours(0)
+                getFutureHours(
+                    0
+                )
             );
 
         const tomorrow =
             summarizeDay(
-                getFutureHours(1)
+                getFutureHours(
+                    1
+                )
             );
 
         if (
@@ -2616,7 +4360,9 @@
             }
         }
 
-        if (!differences.length) {
+        if (
+            !differences.length
+        ) {
             return (
                 "Today and tomorrow look fairly similar overall, without a major difference in the available forecast factors."
             );
@@ -2628,6 +4374,238 @@
     }
 
     /* ========================================================
+       ANSWER: TEMPERATURE
+       ======================================================== */
+
+    function answerTemperature() {
+        const hours =
+            getHourlyData();
+
+        if (
+            !hours.length
+        ) {
+            return (
+                "I don't have enough temperature data yet."
+            );
+        }
+
+        const current =
+            hours[0];
+
+        return (
+            `It currently feels like **${formatTemp(current.feels || current.temp)}**. ` +
+            `${temperatureSummary(current)} ` +
+            `The actual temperature is around **${formatTemp(current.temp)}**.`
+        );
+    }
+
+    /* ========================================================
+       ANSWER: WIND
+       ======================================================== */
+
+    function answerWind() {
+        const hours =
+            getHourlyData();
+
+        if (
+            !hours.length
+        ) {
+            return (
+                "I don't have enough hourly wind data yet."
+            );
+        }
+
+        const current =
+            hours[0];
+
+        const strongest =
+            [...hours].sort(
+                (a, b) =>
+                    b.wind -
+                    a.wind
+            )[0];
+
+        return (
+            `Wind is currently around **${round(current.wind)} km/h**. ` +
+            `The strongest wind in the available forecast is around **${round(strongest.wind)} km/h** at **${formatTime(strongest.time)}**.`
+        );
+    }
+
+    /* ========================================================
+       ANSWER: HUMIDITY
+       ======================================================== */
+
+    function answerHumidity() {
+        const hours =
+            getHourlyData();
+
+        if (
+            !hours.length
+        ) {
+            return (
+                "I don't have enough humidity data yet."
+            );
+        }
+
+        const current =
+            hours[0];
+
+        if (
+            current.humidity >= 90
+        ) {
+            return (
+                `Humidity is currently around **${round(current.humidity)}%**, which is very high. ` +
+                `That can make warm weather feel more uncomfortable.`
+            );
+        }
+
+        if (
+            current.humidity >= 75
+        ) {
+            return (
+                `Humidity is around **${round(current.humidity)}%**, so the air may feel noticeably humid outdoors.`
+            );
+        }
+
+        return (
+            `Humidity is around **${round(current.humidity)}%**, which is relatively manageable.`
+        );
+    }
+
+    /* ========================================================
+       ANSWER: UV
+       ======================================================== */
+
+    function answerUV() {
+        const hours =
+            getHourlyData();
+
+        if (
+            !hours.length
+        ) {
+            return (
+                "I don't have enough UV data yet."
+            );
+        }
+
+        const current =
+            hours[0];
+
+        let level =
+            "low";
+
+        if (
+            current.uv >= 11
+        ) {
+            level =
+                "extreme";
+        } else if (
+            current.uv >= 8
+        ) {
+            level =
+                "very high";
+        } else if (
+            current.uv >= 6
+        ) {
+            level =
+                "high";
+        } else if (
+            current.uv >= 3
+        ) {
+            level =
+                "moderate";
+        }
+
+        return (
+            `The current UV index is around **${round(current.uv)}**, which is **${level}**. ` +
+            (
+                current.uv >= 6
+                    ? "Sun protection is a good idea during prolonged outdoor exposure."
+                    : "UV exposure is currently relatively manageable."
+            )
+        );
+    }
+
+    /* ========================================================
+       ANSWER: OUTDOOR
+       ======================================================== */
+
+    function answerOutdoor(
+        question = ""
+    ) {
+        const hours =
+            getHourlyData();
+
+        if (
+            !hours.length
+        ) {
+            return (
+                "I need the latest hourly forecast before judging outdoor conditions."
+            );
+        }
+
+        const requested =
+            getRequestedTimeContext(
+                question
+            );
+
+        let targetHours =
+            hours;
+
+        if (
+            requested.period
+        ) {
+            targetHours =
+                findHoursByPeriod(
+                    hours,
+                    requested.period
+                );
+        }
+
+        const best =
+            findBestHour(
+                targetHours
+            );
+
+        if (!best) {
+            return (
+                "I couldn't determine the outdoor conditions from the available forecast."
+            );
+        }
+
+        const score =
+            outdoorScore(
+                best
+            );
+
+        const risk =
+            classifyRisk(
+                score,
+                best
+            );
+
+        lastDecision = {
+            type:
+                "outdoor",
+            hour:
+                best,
+            score,
+            risk,
+            reasons:
+                getWeatherFactors(
+                    best
+                )
+        };
+
+        return (
+            `The outdoor conditions are **${risk.label}** around **${formatTime(best.time)}**. ` +
+            `It feels like **${formatTemp(best.feels || best.temp)}**, ` +
+            `with a **${round(best.rainChance)}%** rain chance. ` +
+            `${explainDecision(best)}`
+        );
+    }
+
+    /* ========================================================
        ANSWER: GENERAL
        ======================================================== */
 
@@ -2635,7 +4613,9 @@
         const hours =
             getHourlyData();
 
-        if (!hours.length) {
+        if (
+            !hours.length
+        ) {
             return (
                 "I'm waiting for the latest weather data before giving you a detailed analysis."
             );
@@ -2644,9 +4624,15 @@
         const current =
             hours[0];
 
+        const condition =
+            weatherCodeInfo(
+                current.code
+            );
+
         return (
             `Right now, it feels around **${formatTemp(current.feels || current.temp)}**, ` +
-            `with a **${round(current.rainChance)}%** rain chance, ` +
+            `with **${condition.label}**, ` +
+            `a **${round(current.rainChance)}%** rain chance, ` +
             `wind around **${round(current.wind)} km/h**, ` +
             `humidity around **${round(current.humidity)}%**, ` +
             `and UV around **${round(current.uv)}**. ` +
@@ -2667,58 +4653,210 @@
             );
         }
 
+        const decision =
+            lastDecision;
+
         if (
-            lastDecision.unsuitable
+            decision.unsuitable
         ) {
             return (
-                `I didn't recommend that period because the weather conditions are too unfavorable for ${lastDecision.activity}, ` +
-                `especially the rain risk and overall outdoor comfort.`
+                `I didn't recommend that period because the conditions are unfavorable for ${decision.activity}. ` +
+                `${explainDecision(decision.hour)}`
             );
         }
 
         if (
-            lastDecision.window
+            decision.activity &&
+            decision.hour
+        ) {
+            return (
+                `For ${decision.activity}, I focused mainly on rain, wind, temperature, humidity and UV. ` +
+                `${explainDecision(decision.hour)} ` +
+                `${explainHour(decision.hour)}`
+            );
+        }
+
+        if (
+            decision.window
         ) {
             return (
                 explainWeatherWindow(
-                    lastDecision.window
+                    decision.window
                 ) +
                 " " +
-                explainHour(
-                    lastDecision.hour
+                explainDecision(
+                    decision.hour
                 )
             );
         }
 
-        return explainHour(
-            lastDecision.hour
+        return (
+            explainDecision(
+                decision.hour
+            ) +
+            " " +
+            explainHour(
+                decision.hour
+            )
         );
+    }
+
+    /* ========================================================
+       FOLLOW-UP CONTEXT
+       ======================================================== */
+
+    function answerContextualFollowUp(
+        question
+    ) {
+        const text =
+            normalize(question);
+
+        /*
+         * "Why?" is always tied to the
+         * previous decision.
+         */
+        if (
+            /^why( not)?$/.test(
+                text
+            ) ||
+            /^(how come|why is that)$/.test(
+                text
+            )
+        ) {
+            return answerWhy();
+        }
+
+        /*
+         * "What about tomorrow?"
+         */
+        if (
+            /what about tomorrow|and tomorrow|tomorrow then|how about tomorrow/.test(
+                text
+            )
+        ) {
+            return answerTomorrow();
+        }
+
+        /*
+         * "What about 6 PM?"
+         */
+        if (
+            parseClockTime(text) ||
+            detectTimeOfDay(text)
+        ) {
+            return answerTimeSpecific(
+                text
+            );
+        }
+
+        /*
+         * "What about walking?"
+         * Uses previous conversation when possible.
+         */
+        if (
+            /what about|how about|what if/.test(
+                text
+            ) &&
+            /walk|walking|run|running|cycle|cycling|bike|travel|drive|sport|picnic/.test(
+                text
+            )
+        ) {
+            return answerActivity(
+                text
+            );
+        }
+
+        /*
+         * "What about outside?"
+         */
+        if (
+            /what about|how about/.test(
+                text
+            ) &&
+            /outside|outdoor|going out|go out/.test(
+                text
+            )
+        ) {
+            return answerOutdoor(
+                text
+            );
+        }
+
+        return null;
     }
 
     /* ========================================================
        MAIN ENGINE
        ======================================================== */
 
-    function answer(question) {
+    function answer(
+        question
+    ) {
+        const rawQuestion =
+            String(
+                question || ""
+            ).trim();
+
+        if (
+            !rawQuestion
+        ) {
+            return (
+                "Ask me something about the weather and I'll analyze it for you."
+            );
+        }
+
+        /*
+         * First try contextual follow-up handling.
+         */
+        if (
+            isContextOnlyFollowUp(
+                rawQuestion
+            )
+        ) {
+            const contextual =
+                answerContextualFollowUp(
+                    rawQuestion
+                );
+
+            if (
+                contextual
+            ) {
+                return contextual;
+            }
+        }
+
         const intent =
             detectIntent(
-                question
+                rawQuestion
             );
 
-        switch (intent) {
+        updateConversationContext(
+            rawQuestion,
+            intent
+        );
 
+        switch (
+            intent
+        ) {
             case "best-time":
-                return answerBestTime42();
+                return answerBestTime43(
+                    rawQuestion
+                );
 
             case "worst-time":
                 return answerWorstTime();
 
             case "rain-timing":
-                return answerRainTiming42();
+                return answerRainTiming();
+
+            case "time-specific":
+                return answerTimeSpecific(
+                    rawQuestion
+                );
 
             case "activity":
                 return answerActivity(
-                    question
+                    rawQuestion
                 );
 
             case "clothing":
@@ -2737,18 +4875,28 @@
                 return answerComparison();
 
             case "temperature":
-                return answerGeneral();
+                return answerTemperature();
 
             case "rain":
-                return answerRainTiming42();
+                return answerRainTiming();
 
             case "why":
                 return answerWhy();
 
             case "wind":
+                return answerWind();
+
             case "humidity":
+                return answerHumidity();
+
             case "uv":
+                return answerUV();
+
             case "outdoor":
+                return answerOutdoor(
+                    rawQuestion
+                );
+
             case "general":
             default:
                 return answerGeneral();
@@ -2756,10 +4904,10 @@
     }
 
     /* ========================================================
-       PUBLIC API — CLOUDORA AI 4.2
+       PUBLIC API — CLOUDORA AI 4.3
        ======================================================== */
 
-    const CloudoraAI42API = {
+    const CloudoraAI43API = {
 
         version:
             VERSION,
@@ -2790,8 +4938,35 @@
 
         explainHour,
 
+        weatherCodeInfo,
+
+        getWeatherFactors,
+
+        classifyRisk,
+
+        parseClockTime,
+
+        detectTimeOfDay,
+
+        getConversationContext() {
+            return {
+                ...conversationContext
+            };
+        },
+
         refresh() {
-            lastDecision = null;
+            lastDecision =
+                null;
+
+            conversationContext = {
+                lastQuestion: "",
+                lastIntent: "",
+                lastActivity: "",
+                lastTime: null,
+                lastTimeLabel: "",
+                lastAnswerType: "",
+                lastDecisionType: ""
+            };
         },
 
         getLastDecision() {
@@ -2799,25 +4974,35 @@
         }
     };
 
+    /* ========================================================
+       PUBLIC API
+       ======================================================== */
+
     /*
-     * Primary 4.2 API.
+     * Primary 4.3 API.
+     */
+    window.CloudoraAI43 =
+        CloudoraAI43API;
+
+    /*
+     * 4.2 compatibility.
+     *
+     * Existing code can continue using CloudoraAI42.
      */
     window.CloudoraAI42 =
-        CloudoraAI42API;
+        CloudoraAI43API;
 
     /*
-     * Backward compatibility.
+     * 4.1 compatibility.
      *
-     * Existing ai-engine.js may still request
-     * CloudoraAI41. Keeping this alias prevents
-     * the current application from breaking while
-     * we migrate the rest of Cloudora to 4.2.
+     * Existing ai-engine.js can continue using
+     * CloudoraAI41 without breaking.
      */
     window.CloudoraAI41 =
-        CloudoraAI42API;
+        CloudoraAI43API;
 
     console.log(
-        `Cloudora AI ${VERSION} — Adaptive Weather Intelligence loaded.`
+        `Cloudora AI ${VERSION} — Conversational Weather Intelligence loaded.`
     );
 
 })();
