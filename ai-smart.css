@@ -150,3 +150,52 @@
         white-space: nowrap;
     }
 }
+/* ============================================================
+   CLOUDORA AI 4.0
+============================================================ */
+
+.ai4-context-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 12px;
+    background: rgba(255,255,255,.045);
+    color: inherit;
+}
+
+.ai4-context-bar > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ai4-context-bar strong {
+    font-size: 13px;
+    letter-spacing: .2px;
+}
+
+.ai4-context-bar small {
+    opacity: .65;
+    font-size: 11px;
+}
+
+.ai4-status {
+    font-size: 11px;
+    opacity: .72;
+    white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+    .ai4-context-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ai4-status {
+        white-space: normal;
+    }
+}
